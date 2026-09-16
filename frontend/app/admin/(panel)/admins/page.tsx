@@ -25,6 +25,12 @@ export default function AdminManagementPage() {
     password: "",
   });
 
+  // Reset password state
+  const [resetTarget, setResetTarget] = useState<Admin | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [resetError, setResetError] = useState("");
+  const [resetSaving, setResetSaving] = useState(false);
+
   const fetchAdmins = async () => {
     setLoading(true);
     const { data } = await supabase
@@ -60,7 +66,6 @@ export default function AdminManagementPage() {
 
     const email = form.email.trim().toLowerCase();
 
-    // Check if profile exists
     const { data: existing } = await supabase
       .from("profiles")
       .select("id, role")
@@ -93,7 +98,6 @@ export default function AdminManagementPage() {
       return;
     }
 
-    // Create new user
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password: form.password,
@@ -154,6 +158,65 @@ export default function AdminManagementPage() {
     setTimeout(() => setSuccess(""), 3000);
   };
 
+  const openReset = (admin: Admin) => {
+    setResetTarget(admin);
+    setNewPassword("");
+    setResetError("");
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetTarget) return;
+    setResetError("");
+
+    if (!newPassword || newPassword.length < 6) {
+      setResetError("Password must be at least 6 characters");
+      return;
+    }
+
+    setResetSaving(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setResetError("Not authenticated");
+        setResetSaving(false);
+        return;
+      }
+
+      const res = await fetch(
+        "https://uewgqsfptqbkytfyoqzi.supabase.co/functions/v1/reset-admin-password",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            userId: resetTarget.id,
+            newPassword: newPassword,
+          }),
+        }
+      );
+
+      const result = await res.json();
+
+      setResetSaving(false);
+
+      if (!res.ok || !result.success) {
+        setResetError(result.error || "Failed to reset password");
+        return;
+      }
+
+      setSuccess(`✅ "${resetTarget.name || resetTarget.email}" এর password reset হয়েছে`);
+      setResetTarget(null);
+      setNewPassword("");
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err: any) {
+      setResetError(err.message || "Network error");
+      setResetSaving(false);
+    }
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -204,12 +267,18 @@ export default function AdminManagementPage() {
               </div>
 
               {a.role !== "super_admin" && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="mt-3 pt-3 border-t border-gray-100 flex gap-2">
+                  <button
+                    onClick={() => openReset(a)}
+                    className="flex-1 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg py-2 text-xs font-medium transition"
+                  >
+                    🔑 Reset Password
+                  </button>
                   <button
                     onClick={() => handleRemove(a)}
-                    className="w-full text-red-600 hover:bg-red-50 border border-red-200 rounded-lg py-2 text-xs font-medium transition"
+                    className="flex-1 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg py-2 text-xs font-medium transition"
                   >
-                    🗑️ Remove Admin
+                    🗑️ Remove
                   </button>
                 </div>
               )}
@@ -218,6 +287,7 @@ export default function AdminManagementPage() {
         </div>
       )}
 
+      {/* Add Admin Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-md p-6">
@@ -293,6 +363,61 @@ export default function AdminManagementPage() {
           </div>
         </div>
       )}
+
+      {/* Reset Password Modal */}
+      {resetTarget && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+            <h2 className="text-lg font-bold mb-1">Reset Password</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              {resetTarget.name || resetTarget.email}
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  New Password *
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="min 6 characters"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  এই password টা admin কে জানিয়ে দাও
+                </p>
+              </div>
+
+              {resetError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
+                  {resetError}
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setResetTarget(null)}
+                  className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleResetPassword}
+                  disabled={resetSaving}
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium disabled:opacity-50"
+                >
+                  {resetSaving ? "Resetting..." : "Reset Password"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-      }
+}
