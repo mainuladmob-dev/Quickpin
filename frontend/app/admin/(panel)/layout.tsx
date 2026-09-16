@@ -61,6 +61,7 @@ export default function AdminPanelLayout({
     { name: "Products", href: "/admin/products", icon: "🛍️" },
     { name: "Categories", href: "/admin/categories", icon: "📂" },
     { name: "Banners", href: "/admin/banners", icon: "🖼️" },
+    { name: "QR Code", href: "/admin/qr", icon: "📱" },
     { name: "Payments", href: "/admin/payments", icon: "💳" },
     { name: "Settings", href: "/admin/settings", icon: "⚙️" },
   ];
@@ -75,7 +76,6 @@ export default function AdminPanelLayout({
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white transform transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
@@ -108,7 +108,6 @@ export default function AdminPanelLayout({
         </nav>
       </aside>
 
-      {/* Overlay for mobile */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -116,9 +115,7 @@ export default function AdminPanelLayout({
         ></div>
       )}
 
-      {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Header */}
         <header className="bg-white shadow-sm sticky top-0 z-20">
           <div className="px-4 py-3 flex items-center justify-between">
             <button
@@ -147,9 +144,8 @@ export default function AdminPanelLayout({
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
     </div>
   );
-        }
+}
