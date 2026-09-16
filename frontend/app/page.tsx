@@ -2,28 +2,36 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useLanguage } from "@/lib/i18n/LanguageContext";
+import { t } from "@/lib/i18n/translations";
 
 export default function LanguageSelectPage() {
   const router = useRouter();
-  const [loading, setLoading] = useState<string | null>(null);
+  const { setLang, lang } = useLanguage();
+  const [loading, setLoading] = useState<"bn" | "en" | null>(null);
 
-  const selectLanguage = (lang: "bn" | "en") => {
-    setLoading(lang);
-    localStorage.setItem("language", lang);
-    document.cookie = `language=${lang}; path=/; max-age=31536000`;
-    router.push("/home");
+  const selectLanguage = (selectedLang: "bn" | "en") => {
+    setLoading(selectedLang);
+    setLang(selectedLang);
+    setTimeout(() => {
+      router.push("/home");
+    }, 300);
   };
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-blue-50 to-white p-6">
+      {/* Logo / Name */}
       <div className="mb-12 text-center">
-        <h1 className="text-5xl font-bold text-blue-600 mb-2">Quickpin</h1>
-        <p className="text-gray-500 text-sm">Your favorite products, just one click</p>
+        <h1 className="text-5xl font-bold text-blue-600 mb-2">
+          {t("app_name", lang)}
+        </h1>
+        <p className="text-gray-500 text-sm">{t("tagline", lang)}</p>
       </div>
 
+      {/* Language options */}
       <div className="w-full max-w-sm">
         <p className="text-center text-gray-700 mb-6 font-medium">
-          ভাষা নির্বাচন করুন / Select Language
+          {t("select_language", lang)}
         </p>
 
         <button
@@ -43,7 +51,10 @@ export default function LanguageSelectPage() {
         </button>
       </div>
 
-      <p className="mt-16 text-xs text-gray-400">© 2026 Quickpin</p>
+      {/* Footer */}
+      <p className="mt-16 text-xs text-gray-400">
+        {t("copyright", lang)}
+      </p>
     </div>
   );
 }
