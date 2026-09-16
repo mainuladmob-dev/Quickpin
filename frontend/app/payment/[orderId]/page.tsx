@@ -37,7 +37,10 @@ export default function PaymentPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [upiId, setUpiId] = useState("");
+  const [manualQrUrl, setManualQrUrl] = useState("");
   const [qrDataUrl, setQrDataUrl] = useState("");
+  const [qrError, setQrError] = useState(false);
+  const [showManualQr, setShowManualQr] = useState(false);
   const [method, setMethod] = useState<"upi_now" | "qr_screenshot">("upi_now");
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -52,17 +55,12 @@ export default function PaymentPage() {
         return;
       }
 
-      const [orderData, upiSetting] = await Promise.all([
-        supabase
-          .from("orders")
-          .select("*")
-          .eq("id", orderId)
-          .single(),
+      const [orderData, settingsData] = await Promise.all([
+        supabase.from("orders").select("*").eq("id", orderId).single(),
         supabase
           .from("settings")
-          .select("value")
-          .eq("key", "upi_id")
-          .single(),
+          .select("key, value")
+          .in("key", ["upi_id", "upi_qr_image"]),
       ]);
 
       if (!orderData.data) {
@@ -71,10 +69,15 @@ export default function PaymentPage() {
       }
 
       setOrder(orderData.data);
-      const upi = upiSetting.data?.value || "shop@upi";
-      setUpiId(upi);
 
-      // Generate UPI deep link QR
+      const map: Record<string, string> = {};
+      settingsData.data?.forEach((s: any) => (map[s.key] = s.value));
+
+      const upi = map.upi_id || "shop@upi";
+      setUpiId(upi);
+      setManualQrUrl(map.upi_qr_image || "");
+
+      // Generate auto QR
       const amountToPay =
         orderData.data.payment_type === "partial"
           ? orderData.data.partial_payment_amount
@@ -92,6 +95,8 @@ export default function PaymentPage() {
         setQrDataUrl(qr);
       } catch (err) {
         console.error("QR generation failed:", err);
+        setQrError(true);
+        setShowManualQr(true);
       }
 
       setLoading(false);
@@ -129,7 +134,6 @@ export default function PaymentPage() {
       return null;
     }
 
-    // Private bucket — return the path (not public URL)
     return fileName;
   };
 
@@ -206,7 +210,6 @@ export default function PaymentPage() {
     );
   }
 
-  // Already paid — show success
   if (order.payment_status === "success") {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -258,7 +261,6 @@ export default function PaymentPage() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {/* Header info */}
         <div className="text-center mb-6">
           <p className="text-sm text-gray-500 mb-1">
             {lang === "bn" ? "অর্ডার নম্বর" : "Order Number"}
@@ -275,17 +277,16 @@ export default function PaymentPage() {
           {order.payment_type === "partial" && (
             <p className="text-xs text-gray-500 mt-2">
               {lang === "bn"
-                ? `মোট ₹${order.total_amount} এর মধ্যে ${Math.round(
-                    (amountToPay / order.total_amount) * 100
-                  )}% এখন`
-                : `${Math.round(
-                    (amountToPay / order.total_amount) * 100
-                  )}% of total ₹${order.total_amount} now`}
+                ? `এটা advance payment — মোট ₹${order.total_amount} এর মধ্যে বাকি ₹${
+                    order.total_amount - amountToPay
+                  } পরে`
+                : `This is advance — remaining ₹${
+                    order.total_amount - amountToPay
+                  } later`}
             </p>
           )}
         </div>
 
-        {/* Rejection warning (if any) */}
         {order.rejection_reason && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-sm text-red-700">
             <p className="font-medium mb-1">
@@ -298,7 +299,6 @@ export default function PaymentPage() {
           </div>
         )}
 
-        {/* Method tabs */}
         <div className="bg-white rounded-2xl p-1 mb-4 flex">
           <button
             onClick={() => setMethod("upi_now")}
@@ -322,7 +322,6 @@ export default function PaymentPage() {
           </button>
         </div>
 
-        {/* UPI Pay Now */}
         {method === "upi_now" && (
           <div className="bg-white rounded-2xl p-6 mb-4 text-center">
             <p className="text-5xl mb-4">📲</p>
@@ -341,9 +340,7 @@ export default function PaymentPage() {
               onClick={handlePayNow}
               className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 rounded-xl transition mb-3"
             >
-              {lang === "bn"
-                ? "UPI অ্যাপ খুলুন"
-                : "Open UPI App"}
+              {lang === "bn" ? "UPI অ্যাপ খুলুন" : "Open UPI App"}
             </button>
 
             <p className="text-xs text-gray-400">
@@ -351,17 +348,9 @@ export default function PaymentPage() {
                 ? "পেমেন্ট শেষ হলে অটো যাচাই হবে"
                 : "Payment auto-verifies after completion"}
             </p>
-
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-4 text-xs text-yellow-800 text-left">
-              💡{" "}
-              {lang === "bn"
-                ? "পেমেন্ট সফল না হলে, QR/Screenshot tab থেকে verify করুন"
-                : "If payment doesn't auto-verify, use QR/Screenshot tab"}
-            </div>
           </div>
         )}
 
-        {/* QR + Screenshot */}
         {method === "qr_screenshot" && (
           <>
             <div className="bg-white rounded-2xl p-6 mb-4 text-center">
@@ -374,13 +363,47 @@ export default function PaymentPage() {
                   : "Scan QR below with UPI app to pay"}
               </p>
 
-              {qrDataUrl && (
-                <div className="bg-white p-3 rounded-xl inline-block border border-gray-200 mb-4">
-                  <img
-                    src={qrDataUrl}
-                    alt="UPI QR Code"
-                    className="w-64 h-64"
-                  />
+              {/* Auto QR */}
+              {!showManualQr && qrDataUrl && !qrError && (
+                <>
+                  <div className="bg-white p-3 rounded-xl inline-block border border-gray-200 mb-2">
+                    <img
+                      src={qrDataUrl}
+                      alt="UPI QR Code"
+                      className="w-64 h-64"
+                    />
+                  </div>
+                  <p className="text-xs text-green-600 font-medium mb-4">
+                    ✅ Auto-generated QR ({lang === "bn" ? "amount সহ" : "with amount"})
+                  </p>
+                </>
+              )}
+
+              {/* Manual QR fallback */}
+              {showManualQr && manualQrUrl && (
+                <>
+                  <div className="bg-white p-3 rounded-xl inline-block border border-gray-200 mb-2">
+                    <img
+                      src={manualQrUrl}
+                      alt="Backup QR"
+                      className="w-64 h-64 object-contain"
+                    />
+                  </div>
+                  <p className="text-xs text-orange-600 font-medium mb-4">
+                    ⚠️{" "}
+                    {lang === "bn"
+                      ? "Backup QR — amount manually দিন"
+                      : "Backup QR — enter amount manually"}
+                  </p>
+                </>
+              )}
+
+              {/* No QR available */}
+              {showManualQr && !manualQrUrl && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 text-sm text-red-700">
+                  {lang === "bn"
+                    ? "QR generate করা যায়নি এবং কোনো backup QR নেই। Admin এর সাথে যোগাযোগ করুন।"
+                    : "QR generation failed and no backup available. Contact admin."}
                 </div>
               )}
 
@@ -389,15 +412,40 @@ export default function PaymentPage() {
                 <p className="font-mono text-gray-800">{upiId}</p>
               </div>
 
+              {/* Toggle between auto and manual QR */}
+              <div className="flex gap-2 justify-center mb-4">
+                <button
+                  onClick={() => setShowManualQr(false)}
+                  disabled={qrError || !qrDataUrl}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-40 ${
+                    !showManualQr
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {lang === "bn" ? "Auto QR" : "Auto QR"}
+                </button>
+                <button
+                  onClick={() => setShowManualQr(true)}
+                  disabled={!manualQrUrl}
+                  className={`text-xs px-3 py-1.5 rounded-lg font-medium transition disabled:opacity-40 ${
+                    showManualQr
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {lang === "bn" ? "Backup QR" : "Backup QR"}
+                </button>
+              </div>
+
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-800 text-left">
                 💡{" "}
                 {lang === "bn"
-                  ? "Payment শেষে স্ক্রিনশট নিয়ে নিচে আপলোড করুন। অটো verify হলে স্ক্রিনশট লাগবে না।"
-                  : "After payment, upload screenshot below. If auto-verified, no screenshot needed."}
+                  ? "Payment শেষে স্ক্রিনশট নিয়ে নিচে আপলোড করুন।"
+                  : "After payment, upload screenshot below."}
               </div>
             </div>
 
-            {/* Screenshot upload */}
             <div className="bg-white rounded-2xl p-6 mb-4">
               <h2 className="font-semibold text-gray-800 mb-3">
                 📸 {t("upload_screenshot")}
@@ -467,7 +515,6 @@ export default function PaymentPage() {
           </>
         )}
 
-        {/* Order summary */}
         <div className="bg-white rounded-2xl p-5 text-sm">
           <h3 className="font-semibold text-gray-800 mb-3">
             📋 {lang === "bn" ? "সারসংক্ষেপ" : "Summary"}
@@ -500,4 +547,4 @@ export default function PaymentPage() {
       </div>
     </div>
   );
-              }
+    }
