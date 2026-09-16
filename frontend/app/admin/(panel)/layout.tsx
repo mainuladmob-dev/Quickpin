@@ -61,7 +61,6 @@ export default function AdminPanelLayout({
     { name: "Products", href: "/admin/products", icon: "🛍️" },
     { name: "Categories", href: "/admin/categories", icon: "📂" },
     { name: "Banners", href: "/admin/banners", icon: "🖼️" },
-    { name: "QR Code", href: "/admin/qr", icon: "📱" },
     { name: "Payments", href: "/admin/payments", icon: "💳" },
     { name: "Settings", href: "/admin/settings", icon: "⚙️" },
   ];
