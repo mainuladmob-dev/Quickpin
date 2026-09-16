@@ -11,9 +11,7 @@ const SETTING_LABELS: Record<string, string> = {
   website_tagline_en: "Tagline (English)",
   min_cart_units: "Minimum Cart Units (checkout এর জন্য)",
   delivery_charge: "Delivery Charge (₹)",
-  partial_payment_percent: "Default Partial Payment %",
-  partial_min_percent: "Minimum Partial %",
-  partial_max_percent: "Maximum Partial %",
+  partial_payment_amount: "Partial Payment Amount (₹) — customer এখন যত টাকা দেবে",
   max_screenshot_attempts: "Max Screenshot Attempts",
   upi_id: "UPI ID",
   pickup_address: "Pickup Address",
@@ -41,6 +39,12 @@ export default function AdminSettingsPage() {
       (data as Setting[] | null)?.forEach((s) => {
         map[s.key] = s.value;
       });
+
+      // Migrate old partial_payment_percent if exists but no amount
+      if (map.partial_payment_percent && !map.partial_payment_amount) {
+        map.partial_payment_amount = "100";
+      }
+
       setSettings(map);
       setLoading(false);
     };
@@ -95,7 +99,6 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
-      {/* General text settings */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h2 className="text-base font-semibold text-gray-800 mb-4">
           General Settings
@@ -107,7 +110,14 @@ export default function AdminSettingsPage() {
                 {SETTING_LABELS[key]}
               </label>
               <input
-                type={key.includes("percent") || key.includes("units") || key.includes("charge") || key.includes("attempts") ? "number" : "text"}
+                type={
+                  key.includes("amount") ||
+                  key.includes("units") ||
+                  key.includes("charge") ||
+                  key.includes("attempts")
+                    ? "number"
+                    : "text"
+                }
                 value={settings[key] || ""}
                 onChange={(e) => handleChange(key, e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
@@ -117,7 +127,6 @@ export default function AdminSettingsPage() {
         </div>
       </div>
 
-      {/* Toggle settings */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h2 className="text-base font-semibold text-gray-800 mb-4">
           Enable / Disable Options
@@ -153,12 +162,12 @@ export default function AdminSettingsPage() {
         </div>
       </div>
 
-      {/* UPI QR image hint */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-        💡 <strong>Tip:</strong> UPI QR image আপলোড করতে <strong>Banners</strong> page এর
-        মতো Storage ব্যবহার করো। অথবা সরাসরি <code>settings</code> টেবিলে{" "}
-        <code>upi_qr_image</code> key তে URL যোগ করো।
+        💡 <strong>Tip:</strong> Partial Payment Amount হলো fixed টাকা —
+        customer এত টাকা advance দেবে, বাকিটা delivery এর সময়।
+        <br />
+        উদাহরণ: Total ₹1000, Partial Amount ₹300 → এখন ₹300, পরে ₹700
       </div>
     </div>
   );
-        }
+}
