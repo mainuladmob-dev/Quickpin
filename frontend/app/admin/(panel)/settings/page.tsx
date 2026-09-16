@@ -13,7 +13,6 @@ const SETTING_LABELS: Record<string, string> = {
   delivery_charge: "Delivery Charge (₹)",
   partial_payment_amount: "Partial Payment Amount (₹) — customer এখন যত টাকা দেবে",
   max_screenshot_attempts: "Max Screenshot Attempts",
-  upi_id: "UPI ID",
   pickup_address: "Pickup Address",
   webhook_secret: "Webhook Secret",
 };
@@ -32,6 +31,13 @@ export default function AdminSettingsPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
 
+  // QR upload state
+  const [qrFile, setQrFile] = useState<File | null>(null);
+  const [qrPreview, setQrPreview] = useState("");
+  const [qrUploading, setQrUploading] = useState(false);
+  const [qrMessage, setQrMessage] = useState("");
+  const [qrError, setQrError] = useState("");
+
   useEffect(() => {
     const fetchSettings = async () => {
       const { data } = await supabase.from("settings").select("*");
@@ -39,12 +45,6 @@ export default function AdminSettingsPage() {
       (data as Setting[] | null)?.forEach((s) => {
         map[s.key] = s.value;
       });
-
-      // Migrate old partial_payment_percent if exists but no amount
-      if (map.partial_payment_percent && !map.partial_payment_amount) {
-        map.partial_payment_amount = "100";
-      }
-
       setSettings(map);
       setLoading(false);
     };
@@ -59,11 +59,13 @@ export default function AdminSettingsPage() {
     setSaving(true);
     setMessage("");
 
-    const updates = Object.entries(settings).map(([key, value]) => ({
-      key,
-      value,
-      updated_at: new Date().toISOString(),
-    }));
+    const updates = Object.entries(settings)
+      .filter(([key]) => key !== "upi_qr_image") // QR separately handled
+      .map(([key, value]) => ({
+        key,
+        value,
+        updated_at: new Date().toISOString(),
+      }));
 
     for (const u of updates) {
       await supabase.from("settings").upsert(u);
@@ -72,6 +74,79 @@ export default function AdminSettingsPage() {
     setSaving(false);
     setMessage("Settings saved successfully ✅");
     setTimeout(() => setMessage(""), 3000);
+  };
+
+  // QR file select
+  const handleQrFileChange = (f: File | null) => {
+    setQrFile(f);
+    setQrError("");
+    if (f) {
+      const url = URL.createObjectURL(f);
+      setQrPreview(url);
+    } else {
+      setQrPreview("");
+    }
+  };
+
+  // QR upload
+  const uploadQr = async () => {
+    if (!qrFile) {
+      setQrError("Please select an image first");
+      return;
+    }
+    setQrUploading(true);
+    setQrError("");
+    setQrMessage("");
+
+    const ext = qrFile.name.split(".").pop();
+    const fileName = `upi-qr-${Date.now()}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("banners")
+      .upload(fileName, qrFile);
+
+    if (upErr) {
+      setQrError("Upload failed: " + upErr.message);
+      setQrUploading(false);
+      return;
+    }
+
+    const { data: urlData } = supabase.storage
+      .from("banners")
+      .getPublicUrl(fileName);
+
+    const publicUrl = urlData.publicUrl;
+
+    const { error: saveErr } = await supabase.from("settings").upsert({
+      key: "upi_qr_image",
+      value: publicUrl,
+      updated_at: new Date().toISOString(),
+    });
+
+    if (saveErr) {
+      setQrError("Save failed: " + saveErr.message);
+      setQrUploading(false);
+      return;
+    }
+
+    setSettings((prev) => ({ ...prev, upi_qr_image: publicUrl }));
+    setQrFile(null);
+    setQrPreview("");
+    setQrMessage("✅ QR image uploaded");
+    setQrUploading(false);
+    setTimeout(() => setQrMessage(""), 3000);
+  };
+
+  const removeQr = async () => {
+    if (!confirm("Remove QR image?")) return;
+    await supabase.from("settings").upsert({
+      key: "upi_qr_image",
+      value: "",
+      updated_at: new Date().toISOString(),
+    });
+    setSettings((prev) => ({ ...prev, upi_qr_image: "" }));
+    setQrMessage("QR removed");
+    setTimeout(() => setQrMessage(""), 3000);
   };
 
   if (loading) return <p className="text-gray-500">Loading...</p>;
@@ -99,6 +174,105 @@ export default function AdminSettingsPage() {
         </div>
       )}
 
+      {/* UPI Section */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+        <h2 className="text-base font-semibold text-gray-800 mb-4">
+          💳 UPI Payment
+        </h2>
+
+        {/* UPI ID */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            UPI ID *
+          </label>
+          <input
+            type="text"
+            value={settings.upi_id || ""}
+            onChange={(e) => handleChange("upi_id", e.target.value)}
+            placeholder="yourname@ybl"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 text-sm"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Customer এখানে payment পাঠাবে
+          </p>
+        </div>
+
+        {/* QR upload */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Backup QR Image (optional)
+          </label>
+
+          {settings.upi_qr_image ? (
+            <div className="flex flex-col items-center gap-3 bg-gray-50 rounded-lg p-4">
+              <img
+                src={settings.upi_qr_image}
+                alt="Backup QR"
+                className="w-40 h-40 object-contain border border-gray-200 rounded-lg bg-white p-2"
+              />
+              <button
+                onClick={removeQr}
+                className="text-red-600 hover:underline text-sm"
+              >
+                🗑️ Remove QR
+              </button>
+            </div>
+          ) : (
+            <div className="text-center py-6 text-gray-400 bg-gray-50 rounded-lg text-sm">
+              No backup QR uploaded
+            </div>
+          )}
+
+          <div className="mt-4">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) =>
+                handleQrFileChange(e.target.files?.[0] || null)
+              }
+              className="w-full text-sm text-gray-700"
+            />
+
+            {qrPreview && (
+              <div className="mt-3 bg-gray-50 rounded-lg p-3 flex justify-center">
+                <img
+                  src={qrPreview}
+                  alt="Preview"
+                  className="w-32 h-32 object-contain"
+                />
+              </div>
+            )}
+
+            {qrError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg mt-3">
+                {qrError}
+              </div>
+            )}
+
+            {qrMessage && (
+              <div className="bg-green-50 border border-green-200 text-green-700 text-sm px-3 py-2 rounded-lg mt-3">
+                {qrMessage}
+              </div>
+            )}
+
+            <button
+              onClick={uploadQr}
+              disabled={qrUploading || !qrFile}
+              className="w-full mt-3 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium py-2.5 rounded-lg disabled:opacity-50"
+            >
+              {qrUploading ? "Uploading..." : "Upload QR"}
+            </button>
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mt-4 text-xs text-blue-800">
+            💡 <strong>কীভাবে কাজ করে:</strong> Payment page এ auto-generated QR
+            (amount সহ) সবসময় দেখানো হবে। এই Backup QR টা শুধু তখনই দেখানো
+            হবে যদি auto QR fail করে।
+          </div>
+        </div>
+      </div>
+
+      {/* Other settings */}
       <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
         <h2 className="text-base font-semibold text-gray-800 mb-4">
           General Settings
@@ -127,7 +301,8 @@ export default function AdminSettingsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+      {/* Toggles */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h2 className="text-base font-semibold text-gray-800 mb-4">
           Enable / Disable Options
         </h2>
@@ -161,13 +336,6 @@ export default function AdminSettingsPage() {
           ))}
         </div>
       </div>
-
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-        💡 <strong>Tip:</strong> Partial Payment Amount হলো fixed টাকা —
-        customer এত টাকা advance দেবে, বাকিটা delivery এর সময়।
-        <br />
-        উদাহরণ: Total ₹1000, Partial Amount ₹300 → এখন ₹300, পরে ₹700
-      </div>
     </div>
   );
-}
+      }
