@@ -66,6 +66,7 @@ export default function AdminPanelLayout({
     { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "🔗" },
     { name: "Payments", href: "/admin/payments", icon: "💳" },
     { name: "Settings", href: "/admin/settings", icon: "⚙️" },
+    { name: "My Profile", href: "/admin/profile", icon: "🔑" },
   ];
 
   if (loading) {
