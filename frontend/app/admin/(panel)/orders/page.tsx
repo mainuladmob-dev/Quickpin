@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import OrderDetailModal from "./OrderDetailModal";
+import RefundModal from "./RefundModal";
 
 type Order = {
   id: string;
@@ -17,13 +19,7 @@ type Order = {
   remaining_amount: number;
   payment_method: string | null;
   payment_status: "pending" | "success" | "failed" | "refunded";
-  order_status:
-    | "pending"
-    | "current"
-    | "spam"
-    | "out_for_delivery"
-    | "delivered"
-    | "refund";
+  order_status: string;
   refund_reason: string | null;
   refund_amount: number | null;
   refund_method: string | null;
@@ -41,6 +37,30 @@ const STATUSES = [
   { value: "spam", label: "Spam", color: "bg-red-100 text-red-700" },
 ];
 
+const ORDER_TYPES = [
+  { value: "all", label: "সব Order", filter: null },
+  {
+    value: "full_home",
+    label: "Full + Home",
+    filter: { delivery_type: "home_delivery", payment_type: "full" },
+  },
+  {
+    value: "partial_home",
+    label: "Partial + Home",
+    filter: { delivery_type: "home_delivery", payment_type: "partial" },
+  },
+  {
+    value: "full_pickup",
+    label: "Full + Pickup",
+    filter: { delivery_type: "self_pickup", payment_type: "full" },
+  },
+  {
+    value: "partial_pickup",
+    label: "Partial + Pickup",
+    filter: { delivery_type: "self_pickup", payment_type: "partial" },
+  },
+];
+
 export default function AdminOrdersPage() {
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -49,16 +69,11 @@ export default function AdminOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(initialStatus);
+  const [activeOrderType, setActiveOrderType] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState("");
+  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
-  const [refundForm, setRefundForm] = useState({
-    reason: "",
-    amount: "",
-    method: "UPI",
-    note: "",
-  });
-  const [refundError, setRefundError] = useState("");
   const [savingRefund, setSavingRefund] = useState(false);
 
   const fetchOrders = async () => {
@@ -68,14 +83,16 @@ export default function AdminOrdersPage() {
       .select("*, profiles(name, email)")
       .order("created_at", { ascending: false });
 
-    if (activeTab !== "all") {
-      query = query.eq("order_status", activeTab);
+    if (activeTab !== "all") query = query.eq("order_status", activeTab);
+
+    const orderType = ORDER_TYPES.find((t) => t.value === activeOrderType);
+    if (orderType?.filter) {
+      query = query
+        .eq("delivery_type", orderType.filter.delivery_type)
+        .eq("payment_type", orderType.filter.payment_type);
     }
 
-    const { data, error } = await query;
-    if (error) {
-      console.error(error);
-    }
+    const { data } = await query;
     setOrders((data as any) || []);
     setSelected([]);
     setLoading(false);
@@ -83,7 +100,7 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [activeTab]);
+  }, [activeTab, activeOrderType]);
 
   const changeStatus = async (orderId: string, newStatus: string, extra?: any) => {
     const { error } = await supabase
@@ -94,7 +111,6 @@ export default function AdminOrdersPage() {
         ...extra,
       })
       .eq("id", orderId);
-
     if (error) {
       alert(error.message);
       return false;
@@ -105,13 +121,6 @@ export default function AdminOrdersPage() {
   const handleSingleStatus = async (order: Order, newStatus: string) => {
     if (newStatus === "refund") {
       setRefundOrder(order);
-      setRefundForm({
-        reason: order.refund_reason || "",
-        amount: order.refund_amount ? String(order.refund_amount) : "",
-        method: order.refund_method || "UPI",
-        note: order.refund_note || "",
-      });
-      setRefundError("");
       return;
     }
     const ok = await changeStatus(order.id, newStatus);
@@ -119,38 +128,23 @@ export default function AdminOrdersPage() {
   };
 
   const handleBulkStatus = async () => {
-    if (!bulkStatus) {
-      alert("Select a status first");
-      return;
-    }
-    if (selected.length === 0) {
-      alert("Select at least one order");
-      return;
-    }
-    if (bulkStatus === "refund") {
-      alert("Refund must be done one order at a time (reason + amount required).");
-      return;
-    }
+    if (!bulkStatus) return alert("Select a status first");
+    if (selected.length === 0) return alert("Select at least one order");
+    if (bulkStatus === "refund")
+      return alert("Refund must be done one order at a time.");
     if (!confirm(`Change ${selected.length} orders to "${bulkStatus}"?`)) return;
 
-    for (const id of selected) {
-      await changeStatus(id, bulkStatus);
-    }
+    for (const id of selected) await changeStatus(id, bulkStatus);
     setBulkStatus("");
     fetchOrders();
   };
 
   const handleDelete = async (order: Order) => {
-    if (order.order_status !== "spam") {
-      alert("Only spam orders can be deleted.");
-      return;
-    }
+    if (order.order_status !== "spam")
+      return alert("Only spam orders can be deleted.");
     if (!confirm(`Permanently delete order ${order.order_number}?`)) return;
     const { error } = await supabase.from("orders").delete().eq("id", order.id);
-    if (error) {
-      alert(error.message);
-      return;
-    }
+    if (error) return alert(error.message);
     fetchOrders();
   };
 
@@ -158,15 +152,10 @@ export default function AdminOrdersPage() {
     const spamSelected = orders.filter(
       (o) => selected.includes(o.id) && o.order_status === "spam"
     );
-    if (spamSelected.length === 0) {
-      alert("Only spam orders can be deleted.");
-      return;
-    }
-    if (spamSelected.length !== selected.length) {
-      alert("Some selected orders are not spam. Please select only spam orders.");
-      return;
-    }
-    if (!confirm(`Delete ${spamSelected.length} spam orders permanently?`)) return;
+    if (spamSelected.length === 0) return alert("Only spam can be deleted.");
+    if (spamSelected.length !== selected.length)
+      return alert("Some selected orders are not spam.");
+    if (!confirm(`Delete ${spamSelected.length} spam orders?`)) return;
 
     for (const o of spamSelected) {
       await supabase.from("orders").delete().eq("id", o.id);
@@ -175,31 +164,20 @@ export default function AdminOrdersPage() {
     fetchOrders();
   };
 
-  const submitRefund = async () => {
+  const submitRefund = async (data: {
+    reason: string;
+    amount: number;
+    method: string;
+    note: string;
+  }) => {
     if (!refundOrder) return;
-    setRefundError("");
-
-    if (!refundForm.reason.trim()) {
-      setRefundError("Refund reason is required");
-      return;
-    }
-    const amt = parseFloat(refundForm.amount);
-    if (isNaN(amt) || amt <= 0) {
-      setRefundError("Refund amount must be a valid number");
-      return;
-    }
-    if (!refundForm.method.trim()) {
-      setRefundError("Refund method is required");
-      return;
-    }
-
     setSavingRefund(true);
 
     const ok = await changeStatus(refundOrder.id, "refund", {
-      refund_reason: refundForm.reason.trim(),
-      refund_amount: amt,
-      refund_method: refundForm.method,
-      refund_note: refundForm.note.trim() || null,
+      refund_reason: data.reason,
+      refund_amount: data.amount,
+      refund_method: data.method,
+      refund_note: data.note || null,
       refunded_at: new Date().toISOString(),
     });
 
@@ -217,20 +195,15 @@ export default function AdminOrdersPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selected.length === orders.length) {
-      setSelected([]);
-    } else {
-      setSelected(orders.map((o) => o.id));
-    }
+    if (selected.length === orders.length) setSelected([]);
+    else setSelected(orders.map((o) => o.id));
   };
 
-  const getStatusStyle = (status: string) => {
-    return STATUSES.find((s) => s.value === status)?.color || "bg-gray-100 text-gray-700";
-  };
+  const getStatusStyle = (status: string) =>
+    STATUSES.find((s) => s.value === status)?.color || "bg-gray-100 text-gray-700";
 
-  const getStatusLabel = (status: string) => {
-    return STATUSES.find((s) => s.value === status)?.label || status;
-  };
+  const getStatusLabel = (status: string) =>
+    STATUSES.find((s) => s.value === status)?.label || status;
 
   const allSelectedSpam =
     selected.length > 0 &&
@@ -240,34 +213,54 @@ export default function AdminOrdersPage() {
     <div>
       <h1 className="text-2xl font-bold text-gray-800 mb-4">Orders</h1>
 
-      {/* Status tabs */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          onClick={() => setActiveTab("all")}
-          className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-            activeTab === "all"
-              ? "bg-blue-600 text-white"
-              : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
-          }`}
-        >
-          All
-        </button>
-        {STATUSES.map((s) => (
+      <div className="mb-4">
+        <p className="text-xs text-gray-500 font-medium mb-2">ORDER TYPE</p>
+        <div className="flex flex-wrap gap-2">
+          {ORDER_TYPES.map((t) => (
+            <button
+              key={t.value}
+              onClick={() => setActiveOrderType(t.value)}
+              className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
+                activeOrderType === t.value
+                  ? "bg-purple-600 text-white"
+                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mb-4">
+        <p className="text-xs text-gray-500 font-medium mb-2">ORDER STATUS</p>
+        <div className="flex flex-wrap gap-2">
           <button
-            key={s.value}
-            onClick={() => setActiveTab(s.value)}
+            onClick={() => setActiveTab("all")}
             className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-              activeTab === s.value
+              activeTab === "all"
                 ? "bg-blue-600 text-white"
                 : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
             }`}
           >
-            {s.label}
+            All
           </button>
-        ))}
+          {STATUSES.map((s) => (
+            <button
+              key={s.value}
+              onClick={() => setActiveTab(s.value)}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
+                activeTab === s.value
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Bulk action bar */}
       {selected.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-blue-800">
@@ -312,7 +305,7 @@ export default function AdminOrdersPage() {
         <p className="text-gray-500">Loading...</p>
       ) : orders.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-500">
-          No orders in this tab.
+          No orders found for this filter.
         </div>
       ) : (
         <div className="bg-white rounded-xl overflow-hidden border border-gray-200 overflow-x-auto">
@@ -330,7 +323,7 @@ export default function AdminOrdersPage() {
                 <th className="px-3 py-3 font-medium">Customer</th>
                 <th className="px-3 py-3 font-medium">Total</th>
                 <th className="px-3 py-3 font-medium">Paid</th>
-                <th className="px-3 py-3 font-medium">Delivery</th>
+                <th className="px-3 py-3 font-medium">Type</th>
                 <th className="px-3 py-3 font-medium">Payment</th>
                 <th className="px-3 py-3 font-medium">Status</th>
                 <th className="px-3 py-3 font-medium">Change</th>
@@ -348,18 +341,30 @@ export default function AdminOrdersPage() {
                     />
                   </td>
                   <td className="px-3 py-3 font-medium text-gray-800">
-                    {o.order_number}
+                    <button
+                      onClick={() => setViewingOrder(o)}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {o.order_number}
+                    </button>
                   </td>
                   <td className="px-3 py-3 text-gray-700">
                     <div className="text-xs">{o.profiles?.name || "—"}</div>
-                    <div className="text-xs text-gray-400">{o.profiles?.email || ""}</div>
+                    <div className="text-xs text-gray-400">
+                      {o.profiles?.email || ""}
+                    </div>
                   </td>
                   <td className="px-3 py-3 text-gray-800 font-medium">
                     ₹{o.total_amount}
                   </td>
                   <td className="px-3 py-3 text-gray-600">₹{o.paid_amount}</td>
                   <td className="px-3 py-3 text-gray-600 text-xs">
-                    {o.delivery_type === "self_pickup" ? "Self Pickup" : "Home"}
+                    <div>
+                      {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home"}
+                    </div>
+                    <div className="text-gray-400">
+                      {o.payment_type === "full" ? "Full" : "Partial"}
+                    </div>
                   </td>
                   <td className="px-3 py-3">
                     <span
@@ -415,103 +420,21 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* Refund modal */}
+      {viewingOrder && (
+        <OrderDetailModal
+          order={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+        />
+      )}
+
       {refundOrder && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold mb-1">Refund Order</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Order #{refundOrder.order_number} • Total ₹{refundOrder.total_amount}
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Refund Reason *
-                </label>
-                <textarea
-                  rows={2}
-                  value={refundForm.reason}
-                  onChange={(e) =>
-                    setRefundForm({ ...refundForm, reason: e.target.value })
-                  }
-                  placeholder="e.g. Damaged product, Customer complaint..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Refund Amount (₹) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={refundForm.amount}
-                  onChange={(e) =>
-                    setRefundForm({ ...refundForm, amount: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Refund Method *
-                </label>
-                <select
-                  value={refundForm.method}
-                  onChange={(e) =>
-                    setRefundForm({ ...refundForm, method: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                >
-                  <option value="UPI">UPI</option>
-                  <option value="Bank">Bank Transfer</option>
-                  <option value="Cash">Cash</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Note (optional)
-                </label>
-                <input
-                  type="text"
-                  value={refundForm.note}
-                  onChange={(e) =>
-                    setRefundForm({ ...refundForm, note: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
-
-              {refundError && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
-                  {refundError}
-                </div>
-              )}
-
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setRefundOrder(null)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitRefund}
-                  disabled={savingRefund}
-                  className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium disabled:opacity-50"
-                >
-                  {savingRefund ? "Processing..." : "Confirm Refund"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <RefundModal
+          order={refundOrder}
+          onClose={() => setRefundOrder(null)}
+          onSubmit={submitRefund}
+          saving={savingRefund}
+        />
       )}
     </div>
   );
-        }
+                              }
