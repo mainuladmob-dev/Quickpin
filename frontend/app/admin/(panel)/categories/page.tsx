@@ -72,7 +72,10 @@ export default function AdminCategoriesPage() {
 
     let result;
     if (editing) {
-      result = await supabase.from("categories").update(payload).eq("id", editing.id);
+      result = await supabase
+        .from("categories")
+        .update(payload)
+        .eq("id", editing.id);
     } else {
       result = await supabase.from("categories").insert(payload);
     }
@@ -97,8 +100,11 @@ export default function AdminCategoriesPage() {
   };
 
   const handleDelete = async (cat: Category) => {
-    if (!confirm(`Delete "${cat.name_en}"? Products will remain but lose category link.`)) return;
-    const { error } = await supabase.from("categories").delete().eq("id", cat.id);
+    if (!confirm(`Delete "${cat.name_en}"?`)) return;
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .eq("id", cat.id);
     if (error) {
       alert(error.message);
       return;
@@ -125,59 +131,114 @@ export default function AdminCategoriesPage() {
           No categories yet. Click "Add Category" to create one.
         </div>
       ) : (
-        <div className="bg-white rounded-xl overflow-hidden border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-600 text-left">
-              <tr>
-                <th className="px-4 py-3 font-medium">English</th>
-                <th className="px-4 py-3 font-medium">বাংলা</th>
-                <th className="px-4 py-3 font-medium">Slug</th>
-                <th className="px-4 py-3 font-medium">Status</th>
-                <th className="px-4 py-3 font-medium text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categories.map((cat) => (
-                <tr key={cat.id} className="border-t border-gray-100">
-                  <td className="px-4 py-3 font-medium text-gray-800">{cat.name_en}</td>
-                  <td className="px-4 py-3 text-gray-700">{cat.name_bn}</td>
-                  <td className="px-4 py-3 text-gray-500">{cat.slug}</td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => toggleActive(cat)}
-                      className={`text-xs px-2 py-1 rounded-full font-medium ${
-                        cat.is_active
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-600"
-                      }`}
-                    >
-                      {cat.is_active ? "Active" : "Inactive"}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button
-                      onClick={() => openEdit(cat)}
-                      className="text-blue-600 hover:underline text-xs"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(cat)}
-                      className="text-red-600 hover:underline text-xs"
-                    >
-                      Delete
-                    </button>
-                  </td>
+        <>
+          {/* Mobile view — card layout */}
+          <div className="md:hidden space-y-3">
+            {categories.map((cat) => (
+              <div
+                key={cat.id}
+                className="bg-white rounded-xl p-4 border border-gray-200"
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-gray-800 text-sm truncate">
+                      {cat.name_en}
+                    </p>
+                    <p className="text-sm text-gray-700 truncate">
+                      {cat.name_bn}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      slug: {cat.slug}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleActive(cat)}
+                    className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${
+                      cat.is_active
+                        ? "bg-green-100 text-green-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {cat.is_active ? "Active" : "Inactive"}
+                  </button>
+                </div>
+
+                <div className="flex gap-2 pt-2 border-t border-gray-100">
+                  <button
+                    onClick={() => openEdit(cat)}
+                    className="flex-1 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg py-2 text-xs font-medium"
+                  >
+                    ✏️ Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(cat)}
+                    className="flex-1 text-red-600 hover:bg-red-50 border border-red-200 rounded-lg py-2 text-xs font-medium"
+                  >
+                    🗑️ Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop view — table */}
+          <div className="hidden md:block bg-white rounded-xl overflow-hidden border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-600 text-left">
+                <tr>
+                  <th className="px-4 py-3 font-medium">English</th>
+                  <th className="px-4 py-3 font-medium">বাংলা</th>
+                  <th className="px-4 py-3 font-medium">Slug</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {categories.map((cat) => (
+                  <tr key={cat.id} className="border-t border-gray-100">
+                    <td className="px-4 py-3 font-medium text-gray-800">
+                      {cat.name_en}
+                    </td>
+                    <td className="px-4 py-3 text-gray-700">{cat.name_bn}</td>
+                    <td className="px-4 py-3 text-gray-500">{cat.slug}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => toggleActive(cat)}
+                        className={`text-xs px-2 py-1 rounded-full font-medium ${
+                          cat.is_active
+                            ? "bg-green-100 text-green-700"
+                            : "bg-gray-100 text-gray-600"
+                        }`}
+                      >
+                        {cat.is_active ? "Active" : "Inactive"}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-right space-x-2">
+                      <button
+                        onClick={() => openEdit(cat)}
+                        className="text-blue-600 hover:underline text-xs"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(cat)}
+                        className="text-red-600 hover:underline text-xs"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
+      {/* Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 my-8">
             <h2 className="text-lg font-bold mb-4">
               {editing ? "Edit Category" : "Add Category"}
             </h2>
@@ -191,7 +252,9 @@ export default function AdminCategoriesPage() {
                   type="text"
                   required
                   value={form.name_en}
-                  onChange={(e) => setForm({ ...form, name_en: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, name_en: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 />
               </div>
@@ -204,7 +267,9 @@ export default function AdminCategoriesPage() {
                   type="text"
                   required
                   value={form.name_bn}
-                  onChange={(e) => setForm({ ...form, name_bn: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, name_bn: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                 />
               </div>
@@ -251,4 +316,4 @@ export default function AdminCategoriesPage() {
       )}
     </div>
   );
-}
+      }
