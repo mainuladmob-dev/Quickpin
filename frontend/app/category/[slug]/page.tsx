@@ -6,14 +6,15 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import UserMenu from "@/components/UserMenu";
+import ProductCard from "@/components/ProductCard";
 
 type Product = {
   id: string;
   name_bn: string;
   name_en: string;
   price: number;
-  images: string[];
   stock: number;
+  images: string[];
 };
 
 type Category = {
@@ -56,7 +57,7 @@ export default function CategoryPage() {
 
       const { data: prods } = await supabase
         .from("products")
-        .select("id, name_bn, name_en, price, images, stock")
+        .select("id, name_bn, name_en, price, stock, images")
         .eq("category_id", cat.id)
         .eq("is_active", true)
         .order("created_at", { ascending: false });
@@ -117,7 +118,6 @@ export default function CategoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
       <header className="bg-white shadow-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <Link href="/home" className="text-2xl font-bold text-blue-600">
@@ -128,7 +128,6 @@ export default function CategoryPage() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Breadcrumb */}
         <nav className="flex items-center gap-2 text-sm text-gray-500 mb-4">
           <Link href="/home" className="hover:text-blue-600">
             {t("home")}
@@ -137,7 +136,6 @@ export default function CategoryPage() {
           <span className="text-gray-800 font-medium">{getName(category)}</span>
         </nav>
 
-        {/* Back button */}
         <button
           onClick={() => router.back()}
           className="text-sm text-gray-600 hover:text-blue-600 mb-4"
@@ -157,28 +155,7 @@ export default function CategoryPage() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {products.map((p) => (
-              <Link
-                key={p.id}
-                href={`/product/${p.id}`}
-                className="bg-white rounded-xl p-3 shadow-sm hover:shadow-md transition"
-              >
-                {p.images && p.images[0] ? (
-                  <img
-                    src={p.images[0]}
-                    alt={getName(p)}
-                    className="aspect-square w-full object-cover rounded-lg mb-3"
-                  />
-                ) : (
-                  <div className="aspect-square bg-gray-100 rounded-lg mb-3"></div>
-                )}
-                <p className="text-sm font-medium text-gray-800 line-clamp-2 mb-1">
-                  {getName(p)}
-                </p>
-                <p className="text-blue-600 font-bold">₹{p.price}</p>
-                {p.stock === 0 && (
-                  <p className="text-xs text-red-500 mt-1">{t("out_of_stock")}</p>
-                )}
-              </Link>
+              <ProductCard key={p.id} product={p} />
             ))}
           </div>
         )}
