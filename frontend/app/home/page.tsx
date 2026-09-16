@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import UserMenu from "@/components/UserMenu";
+import ProductCard from "@/components/ProductCard";
 
 type Category = {
   id: string;
@@ -19,6 +20,7 @@ type Product = {
   name_bn: string;
   name_en: string;
   price: number;
+  stock: number;
   images: string[];
   category_id: string | null;
 };
@@ -50,14 +52,11 @@ export default function HomePage() {
           .order("name_en"),
         supabase
           .from("products")
-          .select("id, name_bn, name_en, price, images, category_id")
+          .select("id, name_bn, name_en, price, stock, images, category_id")
           .eq("is_active", true)
           .order("created_at", { ascending: false })
-          .limit(8),
-        supabase
-          .from("banners")
-          .select("*")
-          .eq("is_active", true),
+          .limit(12),
+        supabase.from("banners").select("*").eq("is_active", true),
       ]);
 
       setCategories(cats.data || []);
@@ -188,25 +187,7 @@ export default function HomePage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {products.map((p) => (
-                <Link
-                  key={p.id}
-                  href={`/product/${p.id}`}
-                  className="bg-white rounded-xl p-3 shadow-sm hover:shadow-md transition"
-                >
-                  {p.images && p.images[0] ? (
-                    <img
-                      src={p.images[0]}
-                      alt={getName(p)}
-                      className="aspect-square w-full object-cover rounded-lg mb-3"
-                    />
-                  ) : (
-                    <div className="aspect-square bg-gray-100 rounded-lg mb-3"></div>
-                  )}
-                  <p className="text-sm font-medium text-gray-800 line-clamp-2 mb-1">
-                    {getName(p)}
-                  </p>
-                  <p className="text-blue-600 font-bold">₹{p.price}</p>
-                </Link>
+                <ProductCard key={p.id} product={p} />
               ))}
             </div>
           )}
