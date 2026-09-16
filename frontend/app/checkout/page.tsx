@@ -203,7 +203,6 @@ export default function CheckoutPage() {
           subtotal,
           delivery_charge: deliveryCharge,
           total_amount: totalAmount,
-          partial_payment_percent: paymentType === "partial" ? partialPercent : 0,
           partial_payment_amount: paymentType === "partial" ? partialAmount : 0,
           paid_amount: 0,
           remaining_amount: remainingAmount,
