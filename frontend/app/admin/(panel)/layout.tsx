@@ -62,6 +62,7 @@ export default function AdminPanelLayout({
   { name: "Categories", href: "/admin/categories", icon: "📂" },
   { name: "Banners", href: "/admin/banners", icon: "🖼️" },
   { name: "Admins", href: "/admin/admins", icon: "👤" },
+  { name: "Customers", href: "/admin/customers", icon: "👥" },
   { name: "Payments", href: "/admin/payments", icon: "💳" },
   { name: "Settings", href: "/admin/settings", icon: "⚙️" },
 ];
