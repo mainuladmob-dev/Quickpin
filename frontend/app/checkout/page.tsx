@@ -52,7 +52,7 @@ export default function CheckoutPage() {
 
   const [settings, setSettings] = useState({
     delivery_charge: 50,
-    partial_payment_percent: 30,
+    partial_payment_amount: 100,
     min_cart_units: 10,
     enable_full_payment: true,
     enable_partial_payment: true,
@@ -96,7 +96,7 @@ export default function CheckoutPage() {
       settingsData.data?.forEach((s: any) => (map[s.key] = s.value));
       setSettings({
         delivery_charge: parseInt(map.delivery_charge || "50"),
-        partial_payment_percent: parseInt(map.partial_payment_percent || "30"),
+        partial_payment_amount: parseInt(map.partial_payment_amount || "100"),
         min_cart_units: parseInt(map.min_cart_units || "10"),
         enable_full_payment: map.enable_full_payment !== "false",
         enable_partial_payment: map.enable_partial_payment !== "false",
@@ -142,11 +142,10 @@ export default function CheckoutPage() {
 
   const totalAmount = subtotal + deliveryCharge;
 
-  const partialPercent = settings.partial_payment_percent;
   const partialAmount =
-    paymentType === "partial"
-      ? (totalAmount * partialPercent) / 100
-      : totalAmount;
+  paymentType === "partial"
+    ? Math.min(settings.partial_payment_amount, totalAmount)
+    : totalAmount;
 
   const paidAmount = partialAmount;
   const remainingAmount = totalAmount - paidAmount;
@@ -459,7 +458,7 @@ export default function CheckoutPage() {
                 />
                 <div className="flex-1">
                   <p className="font-medium text-gray-800 text-sm">
-                    {t("partial_payment")} ({partialPercent}%)
+                    {t("partial_payment")}
                   </p>
                   <p className="text-xs text-gray-500">
                     {t("paid_now")}: ₹{partialAmount.toFixed(2)} • {t("pay_later")}: ₹
