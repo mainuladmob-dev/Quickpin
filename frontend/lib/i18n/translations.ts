@@ -167,8 +167,8 @@ export const translations = {
     en: "Full Payment",
   },
   partial_payment: {
-    bn: "আংশিক পেমেন্ট",
-    en: "Partial Payment",
+    bn: "অ্যাডভান্স পেমেন্ট",
+    en: "Advance Payment",
   },
   paid_now: {
     bn: "এখন দিতে হবে",
@@ -305,7 +305,6 @@ export function t(
 
   let text: string = entry[lang] || entry.en || key;
 
-  // Replace {count}, {name} type variables
   if (vars) {
     Object.entries(vars).forEach(([k, v]) => {
       text = text.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
