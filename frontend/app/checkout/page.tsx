@@ -91,7 +91,6 @@ export default function CheckoutPage() {
 
       setItems((cartData.data as any) || []);
 
-      // Parse settings
       const map: Record<string, string> = {};
       settingsData.data?.forEach((s: any) => (map[s.key] = s.value));
       setSettings({
@@ -115,11 +114,9 @@ export default function CheckoutPage() {
 
       setSelectedAddressId(defaultId);
 
-      // Default delivery type
       if (map.enable_self_pickup === "false") setDeliveryType("home_delivery");
       else if (map.enable_home_delivery === "false") setDeliveryType("self_pickup");
 
-      // Default payment type
       if (map.enable_partial_payment === "false") setPaymentType("full");
       else if (map.enable_full_payment === "false") setPaymentType("partial");
 
@@ -142,12 +139,12 @@ export default function CheckoutPage() {
 
   const totalAmount = subtotal + deliveryCharge;
 
-  const partialAmount =
-  paymentType === "partial"
-    ? Math.min(settings.partial_payment_amount, totalAmount)
-    : totalAmount;
+  // Advance Payment Logic — Fixed Amount (Admin Set)
+  const advanceAmount = settings.partial_payment_amount;
+  const canSelectAdvance = advanceAmount < totalAmount;
 
-  const paidAmount = partialAmount;
+  const paidAmount =
+    paymentType === "partial" ? advanceAmount : totalAmount;
   const remainingAmount = totalAmount - paidAmount;
 
   const selectedAddress = addresses.find((a) => a.id === selectedAddressId);
@@ -171,6 +168,15 @@ export default function CheckoutPage() {
         lang === "bn"
           ? "ডেলিভারি ঠিকানা নির্বাচন করুন"
           : "Please select a delivery address"
+      );
+      return;
+    }
+
+    if (paymentType === "partial" && !canSelectAdvance) {
+      alert(
+        lang === "bn"
+          ? "Advance amount order total এর চেয়ে বেশি"
+          : "Advance amount exceeds order total"
       );
       return;
     }
@@ -203,14 +209,15 @@ export default function CheckoutPage() {
           subtotal,
           delivery_charge: deliveryCharge,
           total_amount: totalAmount,
-          partial_payment_amount: paymentType === "partial" ? partialAmount : 0,
+          partial_payment_amount: paymentType === "partial" ? advanceAmount : 0,
           paid_amount: 0,
-          remaining_amount: remainingAmount,
+          remaining_amount: paymentType === "partial" ? remainingAmount : totalAmount,
           payment_status: "pending",
           order_status: "pending",
           address_id: deliveryType === "home_delivery" ? selectedAddressId : null,
           delivery_address_snapshot: addressSnapshot,
-          pickup_point: deliveryType === "self_pickup" ? settings.pickup_address : null,
+          pickup_point:
+            deliveryType === "self_pickup" ? settings.pickup_address : null,
         })
         .select()
         .single();
@@ -219,7 +226,6 @@ export default function CheckoutPage() {
         throw new Error(orderError?.message || "Order creation failed");
       }
 
-      // Insert order items
       const orderItems = items
         .filter((item) => item.product)
         .map((item) => ({
@@ -237,10 +243,8 @@ export default function CheckoutPage() {
         throw new Error(itemsError.message);
       }
 
-      // Clear cart
       await supabase.from("cart").delete().eq("user_id", user.id);
 
-      // Redirect to payment page
       router.push(`/payment/${orderData.id}`);
     } catch (err: any) {
       alert(err.message || "Something went wrong");
@@ -330,11 +334,14 @@ export default function CheckoutPage() {
           </div>
         </div>
 
-        {/* Address (only for home delivery) */}
+        {/* Address */}
         {deliveryType === "home_delivery" && (
           <div className="bg-white rounded-2xl p-5 mb-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="font-semibold text-gray-800">📍 {lang === "bn" ? "ডেলিভারি ঠিকানা" : "Delivery Address"}</h2>
+              <h2 className="font-semibold text-gray-800">
+                📍{" "}
+                {lang === "bn" ? "ডেলিভারি ঠিকানা" : "Delivery Address"}
+              </h2>
               <Link
                 href="/addresses"
                 className="text-xs text-blue-600 hover:underline"
@@ -345,9 +352,7 @@ export default function CheckoutPage() {
 
             {addresses.length === 0 ? (
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
-                {lang === "bn"
-                  ? "কোনো ঠিকানা নেই। "
-                  : "No address found. "}
+                {lang === "bn" ? "কোনো ঠিকানা নেই। " : "No address found. "}
                 <Link href="/addresses" className="underline font-medium">
                   {t("add_new_address")}
                 </Link>
@@ -391,7 +396,9 @@ export default function CheckoutPage() {
                       <p className="text-gray-600 text-xs">
                         {addr.city}, {addr.state} - {addr.pincode}
                       </p>
-                      <p className="text-gray-500 text-xs mt-1">📱 {addr.phone}</p>
+                      <p className="text-gray-500 text-xs mt-1">
+                        📱 {addr.phone}
+                      </p>
                     </div>
                   </label>
                 ))}
@@ -400,7 +407,6 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {/* Self pickup info */}
         {deliveryType === "self_pickup" && settings.pickup_address && (
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 mb-4">
             <p className="text-xs text-blue-600 font-medium mb-1">
@@ -435,17 +441,23 @@ export default function CheckoutPage() {
                   <p className="font-medium text-gray-800 text-sm">
                     {t("full_payment")}
                   </p>
-                  <p className="text-xs text-gray-500">₹{totalAmount.toFixed(2)}</p>
+                  <p className="text-xs text-gray-500">
+                    ₹{totalAmount.toFixed(2)}
+                  </p>
                 </div>
               </label>
             )}
 
             {settings.enable_partial_payment && (
               <label
-                className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition ${
+                className={`flex items-start gap-3 p-3 border-2 rounded-xl transition ${
                   paymentType === "partial"
                     ? "border-blue-600 bg-blue-50"
                     : "border-gray-200"
+                } ${
+                  !canSelectAdvance
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
                 }`}
               >
                 <input
@@ -453,23 +465,32 @@ export default function CheckoutPage() {
                   name="payment"
                   checked={paymentType === "partial"}
                   onChange={() => setPaymentType("partial")}
-                  className="accent-blue-600"
+                  disabled={!canSelectAdvance}
+                  className="accent-blue-600 mt-1"
                 />
                 <div className="flex-1">
                   <p className="font-medium text-gray-800 text-sm">
                     {t("partial_payment")}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    {t("paid_now")}: ₹{partialAmount.toFixed(2)} • {t("pay_later")}: ₹
-                    {remainingAmount.toFixed(2)}
+                  <p className="text-xs text-gray-500 mt-1">
+                    {t("paid_now")}: ₹{advanceAmount.toFixed(2)} •{" "}
+                    {t("pay_later")}: ₹
+                    {(totalAmount - advanceAmount).toFixed(2)}
                   </p>
+                  {!canSelectAdvance && (
+                    <p className="text-xs text-red-500 mt-1">
+                      {lang === "bn"
+                        ? "Advance amount order total এর চেয়ে বেশি"
+                        : "Advance amount exceeds order total"}
+                    </p>
+                  )}
                 </div>
               </label>
             )}
           </div>
         </div>
 
-        {/* Order Summary */}
+        {/* Summary */}
         <div className="bg-white rounded-2xl p-5 mb-4">
           <h2 className="font-semibold text-gray-800 mb-3">
             📋 {lang === "bn" ? "সারসংক্ষেপ" : "Summary"}
@@ -493,22 +514,26 @@ export default function CheckoutPage() {
                 ₹{totalAmount.toFixed(2)}
               </span>
             </div>
-            {paymentType === "partial" && (
+            {paymentType === "partial" && canSelectAdvance && (
               <>
                 <div className="flex justify-between text-green-700">
                   <span>{t("paid_now")}</span>
-                  <span className="font-medium">₹{paidAmount.toFixed(2)}</span>
+                  <span className="font-medium">
+                    ₹{advanceAmount.toFixed(2)}
+                  </span>
                 </div>
                 <div className="flex justify-between text-orange-700">
                   <span>{t("pay_later")}</span>
-                  <span className="font-medium">₹{remainingAmount.toFixed(2)}</span>
+                  <span className="font-medium">
+                    ₹{(totalAmount - advanceAmount).toFixed(2)}
+                  </span>
                 </div>
               </>
             )}
           </div>
         </div>
 
-        {/* Place Order button */}
+        {/* Place Order */}
         <button
           onClick={handlePlaceOrder}
           disabled={placing || items.length === 0}
@@ -525,4 +550,4 @@ export default function CheckoutPage() {
       </div>
     </div>
   );
-        }
+                        }
