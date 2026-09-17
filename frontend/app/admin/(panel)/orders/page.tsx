@@ -76,13 +76,33 @@ export default function AdminOrdersPage() {
   useEffect(() => { fetchOrders(); }, [activeTab, activeOrderType]);
 
   const changeStatus = async (orderId: string, newStatus: string, extra?: any) => {
-    const { error } = await supabase
-      .from("orders")
-      .update({ order_status: newStatus, status_changed_at: new Date().toISOString(), ...extra })
-      .eq("id", orderId);
-    if (error) { alert(error.message); return false; }
-    return true;
+  const updates: any = {
+    order_status: newStatus,
+    status_changed_at: new Date().toISOString(),
+    ...extra,
   };
+
+  if (newStatus === "current") {
+    updates.payment_status = "success";
+    updates.payment_verified_by = "admin";
+    updates.payment_verified_at = new Date().toISOString();
+    updates.screenshot_status = "approved";
+  } else if (newStatus === "refund") {
+    updates.payment_status = "refunded";
+  } else if (newStatus === "spam") {
+    updates.payment_status = "failed";
+  }
+
+  const { error } = await supabase
+    .from("orders")
+    .update(updates)
+    .eq("id", orderId);
+  if (error) {
+    alert(error.message);
+    return false;
+  }
+  return true;
+};
 
   const handleSingleStatus = async (order: Order, newStatus: string) => {
     if (newStatus === "refund") { setRefundOrder(order); return; }
