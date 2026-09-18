@@ -194,7 +194,7 @@ const amountToPay =
     );
   }
 
-  if (order.payment_status === "success") {
+  if (order.paid_amount >= order.total_amount) {
     const isPartial = order.payment_type === "partial";
     const codAmount = order.total_amount - order.partial_payment_amount;
 
