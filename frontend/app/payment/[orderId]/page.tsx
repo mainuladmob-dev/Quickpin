@@ -97,10 +97,15 @@ export default function PaymentPage() {
     fetchData();
   }, [orderId, user, userLoading, supabase, router]);
 
-  const amountToPay =
-    order?.payment_type === "partial"
-      ? order?.partial_payment_amount || 0
-      : order?.total_amount || 0;
+  const alreadyPaid = order?.paid_amount || 0;
+const totalAmount = order?.total_amount || 0;
+
+const amountToPay =
+  order?.payment_type === "partial"
+    ? alreadyPaid > 0
+      ? totalAmount - alreadyPaid    // ✅ COD (advance paid হলে)
+      : order?.partial_payment_amount || 0    // ✅ Advance (এখনো paid হয়নি)
+    : totalAmount - alreadyPaid;
 
   const handlePayNow = () => {
     if (!order) return;
