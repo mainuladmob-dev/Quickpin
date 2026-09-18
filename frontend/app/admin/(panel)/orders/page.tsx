@@ -28,7 +28,7 @@ const ORDER_TYPES = [
   },
   {
     value: "partial_home",
-    label: "Partial + Home",
+    label: "Advance + Home",
     filter: { delivery_type: "home_delivery", payment_type: "partial" },
   },
   {
@@ -38,7 +38,7 @@ const ORDER_TYPES = [
   },
   {
     value: "partial_pickup",
-    label: "Partial + Pickup",
+    label: "Advance + Pickup",
     filter: { delivery_type: "self_pickup", payment_type: "partial" },
   },
 ];
