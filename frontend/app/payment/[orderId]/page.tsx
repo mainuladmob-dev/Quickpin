@@ -274,7 +274,13 @@ const amountToPay =
             {order.order_number}
           </p>
           <p className="text-sm text-gray-500 mb-1">
-            {lang === "bn" ? "পরিশোধ করতে হবে" : "Amount to pay"}
+            {lang === "bn"
+  ? alreadyPaid > 0
+    ? "COD বাকি আছে"
+    : "পরিশোধ করতে হবে"
+  : alreadyPaid > 0
+  ? "COD Due"
+  : "Amount to pay"}
           </p>
           <p className="text-4xl font-bold text-blue-600">
             ₹{amountToPay.toFixed(2)}
