@@ -34,63 +34,136 @@ export default function OrdersTable({
   canPrintLabel: (order: Order) => boolean;
   generatingLabel: boolean;
 }) {
-  const getStatusStyle = (status: string) =>
-    STATUSES.find((s) => s.value === status)?.color || "bg-gray-100 text-gray-700";
-
-  const getStatusLabel = (status: string) =>
-    STATUSES.find((s) => s.value === status)?.label || status;
+  const getStatusInfo = (status: string) =>
+    STATUSES.find((s) => s.value === status) || {
+      value: status,
+      label: status,
+      color: "bg-gray-100 text-gray-700",
+    };
 
   return (
-    <div className="bg-white rounded-xl overflow-hidden border border-gray-200 overflow-x-auto">
-      <table className="w-full text-sm min-w-[900px]">
-        <thead className="bg-gray-50 text-gray-600 text-left">
-          <tr>
-            <th className="px-3 py-3 w-8">
-              <input
-                type="checkbox"
-                checked={selected.length === orders.length && orders.length > 0}
-                onChange={onToggleSelectAll}
-              />
-            </th>
-            <th className="px-3 py-3 font-medium">Order #</th>
-            <th className="px-3 py-3 font-medium">Customer</th>
-            <th className="px-3 py-3 font-medium">Total</th>
-            <th className="px-3 py-3 font-medium">Type</th>
-            <th className="px-3 py-3 font-medium">Payment</th>
-            <th className="px-3 py-3 font-medium">Status</th>
-            <th className="px-3 py-3 font-medium">Change</th>
-            <th className="px-3 py-3 font-medium text-right">Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((o) => (
-            <tr key={o.id} className="border-t border-gray-100 hover:bg-gray-50">
-              <td className="px-3 py-3">
+    <div>
+      {/* Select All bar */}
+      <div className="bg-white rounded-xl px-4 py-3 mb-3 flex items-center gap-3 border border-gray-200">
+        <input
+          type="checkbox"
+          checked={selected.length === orders.length && orders.length > 0}
+          onChange={onToggleSelectAll}
+          className="w-5 h-5 accent-blue-600"
+        />
+        <span className="text-sm text-gray-600 font-medium">
+          Select All ({orders.length})
+        </span>
+      </div>
+
+      {/* Order Cards */}
+      <div className="space-y-3">
+        {orders.map((o) => {
+          const statusInfo = getStatusInfo(o.order_status);
+          const isSelected = selected.includes(o.id);
+          const canPrint = canPrintLabel(o);
+          const codAmount = (o.total_amount || 0) - (o.partial_payment_amount || 0);
+
+          return (
+            <div
+              key={o.id}
+              className={`bg-white rounded-xl border-2 p-4 transition ${
+                isSelected ? "border-blue-500 bg-blue-50" : "border-gray-200"
+              }`}
+            >
+              {/* Header Row */}
+              <div className="flex items-start gap-3 mb-3">
                 <input
                   type="checkbox"
-                  checked={selected.includes(o.id)}
+                  checked={isSelected}
                   onChange={() => onToggleSelect(o.id)}
+                  className="mt-1 w-5 h-5 accent-blue-600 flex-shrink-0"
                 />
-              </td>
-              <td className="px-3 py-3 font-medium text-gray-800">
-                <button onClick={() => onView(o)} className="text-blue-600 hover:underline">
-                  {o.order_number}
-                </button>
-              </td>
-              <td className="px-3 py-3 text-gray-700">
-                <div className="text-xs">{o.profiles?.name || "—"}</div>
-                <div className="text-xs text-gray-400">{o.profiles?.email || ""}</div>
-              </td>
-              <td className="px-3 py-3 text-gray-800 font-medium">₹{o.total_amount}</td>
-              <td className="px-3 py-3 text-gray-600 text-xs">
-                <div>{o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home"}</div>
-                <div className="text-gray-400">
-                  {o.payment_type === "full" ? "Full" : "Partial"}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <button
+                      onClick={() => onView(o)}
+                      className="font-bold text-gray-800 text-sm hover:text-blue-600 text-left"
+                    >
+                      {o.order_number}
+                    </button>
+                    <span
+                      className={`text-xs px-2 py-1 rounded-full font-medium flex-shrink-0 ${statusInfo.color}`}
+                    >
+                      {statusInfo.label}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {new Date(o.created_at).toLocaleString("en-IN", {
+                      day: "2-digit",
+                      month: "short",
+                      year: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </p>
                 </div>
-              </td>
-              <td className="px-3 py-3">
+              </div>
+
+              {/* Customer Info */}
+              <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-sm">👤</span>
+                  <p className="text-sm font-medium text-gray-800 truncate">
+                    {o.profiles?.name || "—"}
+                  </p>
+                </div>
+                {o.profiles?.phone ? (
+                  <a
+                    href={`tel:${o.profiles.phone}`}
+                    className="flex items-center gap-2 text-blue-600 hover:underline"
+                  >
+                    <span className="text-sm">📱</span>
+                    <span className="text-sm font-medium">{o.profiles.phone}</span>
+                  </a>
+                ) : (
+                  <p className="text-xs text-gray-400 ml-6">
+                    {o.profiles?.email || "No phone"}
+                  </p>
+                )}
+              </div>
+
+              {/* Amount Breakdown */}
+              <div className="bg-white rounded-lg border border-gray-200 p-3 mb-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-600 font-medium">Total</span>
+                  <span className="font-bold text-gray-800">
+                    ₹{o.total_amount}
+                  </span>
+                </div>
+                {o.payment_type === "partial" && (
+                  <>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-green-700 font-medium">Advance</span>
+                      <span className="font-bold text-green-700">
+                        ₹{o.partial_payment_amount}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-orange-700 font-medium">COD</span>
+                      <span className="font-bold text-orange-700">
+                        ₹{codAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Delivery + Payment Type Row */}
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <span className="px-2 py-1 bg-gray-100 rounded-md font-medium text-gray-700">
+                  {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home"}
+                </span>
+                <span className="px-2 py-1 bg-blue-50 rounded-md font-medium text-blue-700">
+                  {o.payment_type === "full" ? "Full" : "Advance"}
+                </span>
                 <span
-                  className={`text-xs px-2 py-0.5 rounded-full ${
+                  className={`px-2 py-1 rounded-md font-medium ${
                     o.payment_status === "success"
                       ? "bg-green-100 text-green-700"
                       : o.payment_status === "pending"
@@ -102,19 +175,14 @@ export default function OrdersTable({
                 >
                   {o.payment_status}
                 </span>
-              </td>
-              <td className="px-3 py-3">
-                <span
-                  className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusStyle(o.order_status)}`}
-                >
-                  {getStatusLabel(o.order_status)}
-                </span>
-              </td>
-              <td className="px-3 py-3">
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
                 <select
                   value={o.order_status}
                   onChange={(e) => onStatusChange(o, e.target.value)}
-                  className="text-xs border border-gray-300 rounded-lg px-2 py-1 text-gray-900"
+                  className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-2 text-gray-900 font-medium"
                 >
                   {STATUSES.map((s) => (
                     <option key={s.value} value={s.value}>
@@ -122,31 +190,31 @@ export default function OrdersTable({
                     </option>
                   ))}
                 </select>
-              </td>
-              <td className="px-3 py-3 text-right space-x-2">
-                {canPrintLabel(o) && (
+
+                {canPrint && (
                   <button
                     onClick={() => onDownload(o)}
                     disabled={generatingLabel}
-                    className="text-indigo-600 hover:underline text-xs disabled:opacity-50"
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3 py-2 rounded-lg font-medium disabled:opacity-50 flex items-center gap-1"
                     title="Download Label"
                   >
-                    📥
+                    📥 Label
                   </button>
                 )}
+
                 {o.order_status === "spam" && (
                   <button
                     onClick={() => onDelete(o)}
-                    className="text-red-600 hover:underline text-xs"
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded-lg font-medium"
                   >
-                    Delete
+                    🗑️
                   </button>
                 )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
-      }
+}
