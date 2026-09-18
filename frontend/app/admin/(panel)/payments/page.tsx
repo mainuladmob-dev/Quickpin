@@ -52,7 +52,6 @@ export default function AdminPaymentsPage() {
     const orderList = (data as Order[]) || [];
     setOrders(orderList);
 
-    // Fetch profiles separately
     const userIds = [
       ...new Set(orderList.map((o) => o.user_id).filter(Boolean)),
     ] as string[];
@@ -81,6 +80,11 @@ export default function AdminPaymentsPage() {
     if (!confirm(`Approve payment for order ${order.order_number}?`)) return;
     setProcessing(true);
 
+    const paidAmount =
+      order.payment_type === "partial"
+        ? order.partial_payment_amount
+        : order.total_amount;
+
     const { error } = await supabase
       .from("orders")
       .update({
@@ -91,6 +95,8 @@ export default function AdminPaymentsPage() {
         order_status: "current",
         status_changed_at: new Date().toISOString(),
         rejection_reason: null,
+        paid_amount: paidAmount,
+        remaining_amount: order.total_amount - paidAmount,
       })
       .eq("id", order.id);
 
@@ -140,11 +146,9 @@ export default function AdminPaymentsPage() {
     fetchOrders();
   };
 
-  // ✅ FIXED: Use Signed URL for private bucket
   const handleViewScreenshot = async (order: Order) => {
     if (!order.payment_screenshot_url) return;
 
-    // If it's already a full URL (old data), use directly
     if (order.payment_screenshot_url.startsWith("http")) {
       setViewingImage(order.payment_screenshot_url);
       return;
@@ -152,7 +156,6 @@ export default function AdminPaymentsPage() {
 
     setImageLoading(true);
 
-    // Generate signed URL (valid for 1 hour)
     const { data, error } = await supabase.storage
       .from("payment-screenshots")
       .createSignedUrl(order.payment_screenshot_url, 3600);
@@ -199,6 +202,7 @@ export default function AdminPaymentsPage() {
         <div className="space-y-4">
           {orders.map((o) => {
             const profile = o.user_id ? profiles[o.user_id] : null;
+            const codAmount = o.total_amount - o.partial_payment_amount;
             return (
               <div
                 key={o.id}
@@ -235,7 +239,16 @@ export default function AdminPaymentsPage() {
                       ₹{o.total_amount}
                     </p>
                     <p className="text-xs text-gray-500">
-                      Paid: ₹{o.paid_amount} • Due: ₹{o.remaining_amount}
+                      {o.payment_type === "partial" ? (
+                        <>
+                          Advance: ₹{o.partial_payment_amount} • COD: ₹
+                          {codAmount.toFixed(2)}
+                        </>
+                      ) : (
+                        <>
+                          Paid: ₹{o.paid_amount} • Due: ₹{o.remaining_amount}
+                        </>
+                      )}
                     </p>
                     {o.payment_method && (
                       <p className="text-xs text-gray-400 mt-1">
@@ -389,4 +402,4 @@ export default function AdminPaymentsPage() {
       )}
     </div>
   );
-                  }
+         }
