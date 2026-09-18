@@ -74,10 +74,20 @@ export default function PaymentPage() {
       setUpiId(upi);
       setManualQrUrl(map.upi_qr_image || "");
 
-      const amountToPay =
-        orderData.data.payment_type === "partial"
-          ? orderData.data.partial_payment_amount
-          : orderData.data.total_amount;
+      // Calculate amount to pay
+      const alreadyPaid = orderData.data.paid_amount || 0;
+      const totalAmount = orderData.data.total_amount || 0;
+
+      let amountToPay = 0;
+      if (orderData.data.payment_type === "partial") {
+        if (alreadyPaid > 0) {
+          amountToPay = totalAmount - alreadyPaid;   // COD
+        } else {
+          amountToPay = orderData.data.partial_payment_amount;  // Advance
+        }
+      } else {
+        amountToPay = totalAmount - alreadyPaid;
+      }
 
       const upiLink = `upi://pay?pa=${upi}&pn=Quickpin&am=${amountToPay.toFixed(
         2
@@ -98,14 +108,16 @@ export default function PaymentPage() {
   }, [orderId, user, userLoading, supabase, router]);
 
   const alreadyPaid = order?.paid_amount || 0;
-const totalAmount = order?.total_amount || 0;
+  const totalAmount = order?.total_amount || 0;
 
-const amountToPay =
-  order?.payment_type === "partial"
-    ? alreadyPaid > 0
-      ? totalAmount - alreadyPaid    // ✅ COD (advance paid হলে)
-      : order?.partial_payment_amount || 0    // ✅ Advance (এখনো paid হয়নি)
-    : totalAmount - alreadyPaid;
+  const amountToPay =
+    order?.payment_type === "partial"
+      ? alreadyPaid > 0
+        ? totalAmount - alreadyPaid
+        : order?.partial_payment_amount || 0
+      : totalAmount - alreadyPaid;
+
+  const isFullyPaid = alreadyPaid >= totalAmount;
 
   const handlePayNow = () => {
     if (!order) return;
@@ -194,9 +206,9 @@ const amountToPay =
     );
   }
 
-  if (order.paid_amount >= order.total_amount) {
+  // Fully paid screen
+  if (isFullyPaid) {
     const isPartial = order.payment_type === "partial";
-    const codAmount = order.total_amount - order.partial_payment_amount;
 
     return (
       <div className="min-h-screen bg-gray-50">
@@ -236,7 +248,7 @@ const amountToPay =
                   COD (ডেলিভারিতে দিতে হবে)
                 </p>
                 <p className="text-2xl font-bold text-orange-600">
-                  ₹{codAmount.toFixed(2)}
+                  ₹{(order.total_amount - order.partial_payment_amount).toFixed(2)}
                 </p>
               </div>
             </div>
@@ -253,6 +265,7 @@ const amountToPay =
     );
   }
 
+  // Payment form
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm sticky top-0 z-10">
@@ -274,22 +287,29 @@ const amountToPay =
             {order.order_number}
           </p>
           <p className="text-sm text-gray-500 mb-1">
-            {lang === "bn"
-  ? alreadyPaid > 0
-    ? "COD বাকি আছে"
-    : "পরিশোধ করতে হবে"
-  : alreadyPaid > 0
-  ? "COD Due"
-  : "Amount to pay"}
+            {alreadyPaid > 0
+              ? lang === "bn"
+                ? "COD বাকি আছে"
+                : "COD Due"
+              : lang === "bn"
+              ? "পরিশোধ করতে হবে"
+              : "Amount to pay"}
           </p>
           <p className="text-4xl font-bold text-blue-600">
             ₹{amountToPay.toFixed(2)}
           </p>
-          {order.payment_type === "partial" && (
+          {order.payment_type === "partial" && alreadyPaid === 0 && (
             <p className="text-xs text-gray-500 mt-2">
               {lang === "bn"
                 ? `মোট ₹${order.total_amount} এর মধ্যে advance`
                 : `Advance of total ₹${order.total_amount}`}
+            </p>
+          )}
+          {order.payment_type === "partial" && alreadyPaid > 0 && (
+            <p className="text-xs text-orange-600 mt-2">
+              {lang === "bn"
+                ? `Advance ₹${alreadyPaid} পেয়েছি, বাকি COD`
+                : `Advance ₹${alreadyPaid} received, remaining COD`}
             </p>
           )}
         </div>
@@ -488,4 +508,4 @@ const amountToPay =
       </div>
     </div>
   );
-}
+              }
