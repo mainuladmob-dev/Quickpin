@@ -17,6 +17,8 @@ type Order = {
   payment_type: string;
   total_amount: number;
   partial_payment_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
   payment_status: string;
   screenshot_attempts: number;
   screenshot_status: string;
