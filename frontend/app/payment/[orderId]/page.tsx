@@ -188,6 +188,9 @@ export default function PaymentPage() {
   }
 
   if (order.payment_status === "success") {
+    const isPartial = order.payment_type === "partial";
+    const codAmount = order.total_amount - order.partial_payment_amount;
+
     return (
       <div className="min-h-screen bg-gray-50">
         <header className="bg-white shadow-sm">
@@ -201,12 +204,37 @@ export default function PaymentPage() {
         <div className="max-w-2xl mx-auto px-4 py-12 text-center">
           <p className="text-6xl mb-4">🎉</p>
           <h1 className="text-2xl font-bold text-green-600 mb-2">
-            {t("payment_success")}
+            {isPartial
+              ? lang === "bn"
+                ? "Advance পেয়েছি!"
+                : "Advance Received!"
+              : t("payment_success")}
           </h1>
-          <p className="text-gray-600 mb-8">
+          <p className="text-gray-600 mb-2">
             {lang === "bn" ? "অর্ডার নম্বর" : "Order"}:{" "}
             <strong>{order.order_number}</strong>
           </p>
+
+          {isPartial && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 my-6">
+              <p className="text-xs text-orange-700 mb-1 font-medium">
+                Advance
+              </p>
+              <p className="text-lg font-bold text-green-600 mb-3">
+                ₹{order.partial_payment_amount.toFixed(2)} ✅
+              </p>
+
+              <div className="border-t border-orange-200 pt-3">
+                <p className="text-xs text-orange-700 mb-1 font-medium">
+                  COD (ডেলিভারিতে দিতে হবে)
+                </p>
+                <p className="text-2xl font-bold text-orange-600">
+                  ₹{codAmount.toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
+
           <Link
             href="/orders"
             className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium"
@@ -272,7 +300,9 @@ export default function PaymentPage() {
               >
                 <span className="text-lg">📲</span>
                 <span>
-                  {lang === "bn" ? "UPI App দিয়ে পেমেন্ট" : "Pay with UPI App"}
+                  {lang === "bn"
+                    ? "UPI App দিয়ে পেমেন্ট"
+                    : "Pay with UPI App"}
                 </span>
               </button>
 
@@ -445,4 +475,4 @@ export default function PaymentPage() {
       </div>
     </div>
   );
-          }
+              }
