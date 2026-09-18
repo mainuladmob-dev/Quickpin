@@ -86,7 +86,7 @@ export default function AdminOrdersPage() {
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, name, email")
+        .select("id, name, email, phone")
         .in("id", userIds);
 
       (profiles || []).forEach((p: any) => {
