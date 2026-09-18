@@ -11,6 +11,8 @@ type Order = {
   remaining_amount: number;
   payment_method: string | null;
   payment_status: string;
+  payment_type: "full" | "partial";
+  partial_payment_amount: number;
   upi_transaction_id: string | null;
   payment_screenshot_url: string | null;
   screenshot_status: string;
