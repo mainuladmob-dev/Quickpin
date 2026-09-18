@@ -21,10 +21,26 @@ const STATUSES = [
 
 const ORDER_TYPES = [
   { value: "all", label: "সব Order", filter: null },
-  { value: "full_home", label: "Full + Home", filter: { delivery_type: "home_delivery", payment_type: "full" } },
-  { value: "partial_home", label: "Partial + Home", filter: { delivery_type: "home_delivery", payment_type: "partial" } },
-  { value: "full_pickup", label: "Full + Pickup", filter: { delivery_type: "self_pickup", payment_type: "full" } },
-  { value: "partial_pickup", label: "Partial + Pickup", filter: { delivery_type: "self_pickup", payment_type: "partial" } },
+  {
+    value: "full_home",
+    label: "Full + Home",
+    filter: { delivery_type: "home_delivery", payment_type: "full" },
+  },
+  {
+    value: "partial_home",
+    label: "Partial + Home",
+    filter: { delivery_type: "home_delivery", payment_type: "partial" },
+  },
+  {
+    value: "full_pickup",
+    label: "Full + Pickup",
+    filter: { delivery_type: "self_pickup", payment_type: "full" },
+  },
+  {
+    value: "partial_pickup",
+    label: "Partial + Pickup",
+    filter: { delivery_type: "self_pickup", payment_type: "partial" },
+  },
 ];
 
 export default function AdminOrdersPage() {
@@ -45,22 +61,37 @@ export default function AdminOrdersPage() {
 
   const fetchOrders = async () => {
     setLoading(true);
-    let query = supabase.from("orders").select("*").order("created_at", { ascending: false });
+    let query = supabase
+      .from("orders")
+      .select("*")
+      .order("created_at", { ascending: false });
+
     if (activeTab !== "all") query = query.eq("order_status", activeTab);
 
     const orderType = ORDER_TYPES.find((t) => t.value === activeOrderType);
     if (orderType?.filter) {
-      query = query.eq("delivery_type", orderType.filter.delivery_type).eq("payment_type", orderType.filter.payment_type);
+      query = query
+        .eq("delivery_type", orderType.filter.delivery_type)
+        .eq("payment_type", orderType.filter.payment_type);
     }
 
     const { data } = await query;
     const orderList = (data as any) || [];
 
-    const userIds = [...new Set(orderList.map((o: any) => o.user_id).filter(Boolean))];
+    const userIds = [
+      ...new Set(orderList.map((o: any) => o.user_id).filter(Boolean)),
+    ];
     let profileMap: Record<string, any> = {};
+
     if (userIds.length > 0) {
-      const { data: profiles } = await supabase.from("profiles").select("id, name, email").in("id", userIds);
-      (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name, email")
+        .in("id", userIds);
+
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.id] = p;
+      });
     }
 
     const enriched = orderList.map((o: any) => ({
@@ -73,39 +104,52 @@ export default function AdminOrdersPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchOrders(); }, [activeTab, activeOrderType]);
+  useEffect(() => {
+    fetchOrders();
+  }, [activeTab, activeOrderType]);
 
   const changeStatus = async (orderId: string, newStatus: string, extra?: any) => {
-  const updates: any = {
-    order_status: newStatus,
-    status_changed_at: new Date().toISOString(),
-    ...extra,
+    const order = orders.find((o) => o.id === orderId);
+
+    const updates: any = {
+      order_status: newStatus,
+      status_changed_at: new Date().toISOString(),
+      ...extra,
+    };
+
+    if (newStatus === "current" && order) {
+      const paidAmount =
+        order.payment_type === "partial"
+          ? order.partial_payment_amount
+          : order.total_amount;
+      updates.payment_status = "success";
+      updates.payment_verified_by = "admin";
+      updates.payment_verified_at = new Date().toISOString();
+      updates.screenshot_status = "approved";
+      updates.paid_amount = paidAmount;
+      updates.remaining_amount = order.total_amount - paidAmount;
+    } else if (newStatus === "refund") {
+      updates.payment_status = "refunded";
+    } else if (newStatus === "spam") {
+      updates.payment_status = "failed";
+    }
+
+    const { error } = await supabase
+      .from("orders")
+      .update(updates)
+      .eq("id", orderId);
+    if (error) {
+      alert(error.message);
+      return false;
+    }
+    return true;
   };
 
-  if (newStatus === "current") {
-    updates.payment_status = "success";
-    updates.payment_verified_by = "admin";
-    updates.payment_verified_at = new Date().toISOString();
-    updates.screenshot_status = "approved";
-  } else if (newStatus === "refund") {
-    updates.payment_status = "refunded";
-  } else if (newStatus === "spam") {
-    updates.payment_status = "failed";
-  }
-
-  const { error } = await supabase
-    .from("orders")
-    .update(updates)
-    .eq("id", orderId);
-  if (error) {
-    alert(error.message);
-    return false;
-  }
-  return true;
-};
-
   const handleSingleStatus = async (order: Order, newStatus: string) => {
-    if (newStatus === "refund") { setRefundOrder(order); return; }
+    if (newStatus === "refund") {
+      setRefundOrder(order);
+      return;
+    }
     const ok = await changeStatus(order.id, newStatus);
     if (ok) fetchOrders();
   };
@@ -113,15 +157,18 @@ export default function AdminOrdersPage() {
   const handleBulkStatus = async () => {
     if (!bulkStatus) return alert("Select a status first");
     if (selected.length === 0) return alert("Select at least one order");
-    if (bulkStatus === "refund") return alert("Refund must be done one order at a time.");
+    if (bulkStatus === "refund")
+      return alert("Refund must be done one order at a time.");
     if (!confirm(`Change ${selected.length} orders to "${bulkStatus}"?`)) return;
+
     for (const id of selected) await changeStatus(id, bulkStatus);
     setBulkStatus("");
     fetchOrders();
   };
 
   const handleDelete = async (order: Order) => {
-    if (order.order_status !== "spam") return alert("Only spam orders can be deleted.");
+    if (order.order_status !== "spam")
+      return alert("Only spam orders can be deleted.");
     if (!confirm(`Permanently delete order ${order.order_number}?`)) return;
     const { error } = await supabase.from("orders").delete().eq("id", order.id);
     if (error) return alert(error.message);
@@ -129,18 +176,30 @@ export default function AdminOrdersPage() {
   };
 
   const handleBulkDelete = async () => {
-    const spamSelected = orders.filter((o) => selected.includes(o.id) && o.order_status === "spam");
+    const spamSelected = orders.filter(
+      (o) => selected.includes(o.id) && o.order_status === "spam"
+    );
     if (spamSelected.length === 0) return alert("Only spam can be deleted.");
-    if (spamSelected.length !== selected.length) return alert("Some selected orders are not spam.");
+    if (spamSelected.length !== selected.length)
+      return alert("Some selected orders are not spam.");
     if (!confirm(`Delete ${spamSelected.length} spam orders?`)) return;
-    for (const o of spamSelected) await supabase.from("orders").delete().eq("id", o.id);
+
+    for (const o of spamSelected) {
+      await supabase.from("orders").delete().eq("id", o.id);
+    }
     setSelected([]);
     fetchOrders();
   };
 
-  const submitRefund = async (data: { reason: string; amount: number; method: string; note: string }) => {
+  const submitRefund = async (data: {
+    reason: string;
+    amount: number;
+    method: string;
+    note: string;
+  }) => {
     if (!refundOrder) return;
     setSavingRefund(true);
+
     const ok = await changeStatus(refundOrder.id, "refund", {
       refund_reason: data.reason,
       refund_amount: data.amount,
@@ -148,8 +207,12 @@ export default function AdminOrdersPage() {
       refund_note: data.note || null,
       refunded_at: new Date().toISOString(),
     });
+
     setSavingRefund(false);
-    if (ok) { setRefundOrder(null); fetchOrders(); }
+    if (ok) {
+      setRefundOrder(null);
+      fetchOrders();
+    }
   };
 
   const canPrintLabel = (order: Order) =>
@@ -161,30 +224,53 @@ export default function AdminOrdersPage() {
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
     setGeneratingLabel(true);
-    try { await generateLabelPDF([order], `label-${order.order_number}.pdf`); }
-    catch (err: any) { alert("Label failed: " + err.message); }
+    try {
+      await generateLabelPDF([order], `label-${order.order_number}.pdf`);
+    } catch (err: any) {
+      alert("Label failed: " + err.message);
+    }
     setGeneratingLabel(false);
   };
 
   const handleBulkDownload = async () => {
-    const validOrders = orders.filter((o) => selected.includes(o.id) && canPrintLabel(o));
+    const validOrders = orders.filter(
+      (o) => selected.includes(o.id) && canPrintLabel(o)
+    );
     if (validOrders.length === 0) return alert("No printable orders selected");
     setGeneratingLabel(true);
-    try { await generateLabelPDF(validOrders, `labels-bulk-${validOrders.length}.pdf`); }
-    catch (err: any) { alert("Bulk label failed: " + err.message); }
+    try {
+      await generateLabelPDF(
+        validOrders,
+        `labels-bulk-${validOrders.length}.pdf`
+      );
+    } catch (err: any) {
+      alert("Bulk label failed: " + err.message);
+    }
     setGeneratingLabel(false);
   };
 
   const handleBulkPrint = async () => {
-    const validOrders = orders.filter((o) => selected.includes(o.id) && canPrintLabel(o));
+    const validOrders = orders.filter(
+      (o) => selected.includes(o.id) && canPrintLabel(o)
+    );
     if (validOrders.length === 0) return alert("No printable orders selected");
     setGeneratingLabel(true);
     try {
       const jsPDF = (await import("jspdf")).default;
       const QRCode = (await import("qrcode")).default;
-      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const labelW = 95, labelH = 140, marginX = 8, marginY = 8, gapX = 4, gapY = 4;
-      const labelsPerRow = 2, perPage = 4;
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+      const labelW = 95,
+        labelH = 140,
+        marginX = 8,
+        marginY = 8,
+        gapX = 4,
+        gapY = 4;
+      const labelsPerRow = 2,
+        perPage = 4;
 
       for (let i = 0; i < validOrders.length; i++) {
         const order = validOrders[i];
@@ -219,10 +305,20 @@ export default function AdminOrdersPage() {
         pdf.setFontSize(9);
 
         let cy = y + 45;
-        if (addr.phone) { pdf.text(`Phone: ${addr.phone}`, x + 4, cy); cy += 5; }
-        if (addr.address_line1) { pdf.text(addr.address_line1, x + 4, cy); cy += 5; }
+        if (addr.phone) {
+          pdf.text(`Phone: ${addr.phone}`, x + 4, cy);
+          cy += 5;
+        }
+        if (addr.address_line1) {
+          pdf.text(addr.address_line1, x + 4, cy);
+          cy += 5;
+        }
         if (addr.city) {
-          pdf.text(`${addr.city}, ${addr.state || ""} - ${addr.pincode || ""}`, x + 4, cy);
+          pdf.text(
+            `${addr.city}, ${addr.state || ""} - ${addr.pincode || ""}`,
+            x + 4,
+            cy
+          );
           cy += 5;
         }
 
@@ -240,17 +336,23 @@ export default function AdminOrdersPage() {
         pdf.setFontSize(7);
         pdf.setTextColor(150, 150, 150);
         pdf.setFont("helvetica", "normal");
-        pdf.text("Thank you for shopping", x + labelW / 2, y + labelH - 5, { align: "center" });
+        pdf.text("Thank you for shopping", x + labelW / 2, y + labelH - 5, {
+          align: "center",
+        });
       }
 
       const blob = pdf.output("bloburl");
       window.open(blob, "_blank");
-    } catch (err: any) { alert("Print failed: " + err.message); }
+    } catch (err: any) {
+      alert("Print failed: " + err.message);
+    }
     setGeneratingLabel(false);
   };
 
   const toggleSelect = (id: string) => {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
   const toggleSelectAll = () => {
@@ -260,7 +362,9 @@ export default function AdminOrdersPage() {
 
   const allSelectedSpam =
     selected.length > 0 &&
-    orders.filter((o) => selected.includes(o.id)).every((o) => o.order_status === "spam");
+    orders
+      .filter((o) => selected.includes(o.id))
+      .every((o) => o.order_status === "spam");
 
   return (
     <div>
@@ -274,7 +378,9 @@ export default function AdminOrdersPage() {
               key={t.value}
               onClick={() => setActiveOrderType(t.value)}
               className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
-                activeOrderType === t.value ? "bg-purple-600 text-white" : "bg-white text-gray-700 border border-gray-200"
+                activeOrderType === t.value
+                  ? "bg-purple-600 text-white"
+                  : "bg-white text-gray-700 border border-gray-200"
               }`}
             >
               {t.label}
@@ -289,7 +395,9 @@ export default function AdminOrdersPage() {
           <button
             onClick={() => setActiveTab("all")}
             className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-              activeTab === "all" ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200"
+              activeTab === "all"
+                ? "bg-blue-600 text-white"
+                : "bg-white text-gray-700 border border-gray-200"
             }`}
           >
             All
@@ -299,7 +407,9 @@ export default function AdminOrdersPage() {
               key={s.value}
               onClick={() => setActiveTab(s.value)}
               className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
-                activeTab === s.value ? "bg-blue-600 text-white" : "bg-white text-gray-700 border border-gray-200"
+                activeTab === s.value
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 border border-gray-200"
               }`}
             >
               {s.label}
@@ -310,7 +420,9 @@ export default function AdminOrdersPage() {
 
       {selected.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-blue-800">Selected: {selected.length}</span>
+          <span className="text-sm font-medium text-blue-800">
+            Selected: {selected.length}
+          </span>
           <select
             value={bulkStatus}
             onChange={(e) => setBulkStatus(e.target.value)}
@@ -318,10 +430,15 @@ export default function AdminOrdersPage() {
           >
             <option value="">Move to...</option>
             {STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
             ))}
           </select>
-          <button onClick={handleBulkStatus} className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded-lg font-medium">
+          <button
+            onClick={handleBulkStatus}
+            className="bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 py-1.5 rounded-lg font-medium"
+          >
             Apply
           </button>
           <button
@@ -339,11 +456,17 @@ export default function AdminOrdersPage() {
             📥 Download ({selected.length})
           </button>
           {allSelectedSpam && (
-            <button onClick={handleBulkDelete} className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1.5 rounded-lg font-medium">
+            <button
+              onClick={handleBulkDelete}
+              className="bg-red-600 hover:bg-red-700 text-white text-sm px-3 py-1.5 rounded-lg font-medium"
+            >
               Delete Selected
             </button>
           )}
-          <button onClick={() => setSelected([])} className="text-sm text-gray-600 hover:underline">
+          <button
+            onClick={() => setSelected([])}
+            className="text-sm text-gray-600 hover:underline"
+          >
             Clear
           </button>
         </div>
@@ -371,7 +494,10 @@ export default function AdminOrdersPage() {
       )}
 
       {viewingOrder && (
-        <OrderDetailModal order={viewingOrder} onClose={() => setViewingOrder(null)} />
+        <OrderDetailModal
+          order={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+        />
       )}
 
       {refundOrder && (
@@ -384,4 +510,4 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-        }
+            }
