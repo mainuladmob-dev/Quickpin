@@ -291,9 +291,9 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
-                  {needsPayment && (
-                    <Link
-                      href={`/payment/${o.id}`}
+                  {(o.paid_amount || 0) < o.total_amount && (
+  <Link
+    href={`/payment/${o.id}`}
                       className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
                     >
                       {lang === "bn"
