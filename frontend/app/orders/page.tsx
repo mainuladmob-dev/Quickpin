@@ -15,6 +15,7 @@ type Order = {
   total_amount: number;
   paid_amount: number;
   remaining_amount: number;
+  partial_payment_amount: number;
   payment_status: string;
   order_status: string;
   refund_reason: string | null;
@@ -22,7 +23,10 @@ type Order = {
   created_at: string;
 };
 
-const STATUS_LABELS: Record<string, { bn: string; en: string; color: string }> = {
+const STATUS_LABELS: Record<
+  string,
+  { bn: string; en: string; color: string }
+> = {
   pending: {
     bn: "অপেক্ষমাণ",
     en: "Pending",
@@ -74,7 +78,7 @@ export default function MyOrdersPage() {
       const { data } = await supabase
         .from("orders")
         .select(
-          "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
+          "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
@@ -248,23 +252,26 @@ export default function MyOrdersPage() {
                       </span>
                     </div>
                     {o.payment_type === "partial" && (
-  <>
-    <div className="flex justify-between text-xs">
-      <span className="text-green-700">Advance</span>
-      <span className="font-medium text-green-700">
-        ₹{o.partial_payment_amount}
-      </span>
-    </div>
-    <div className="flex justify-between text-xs">
-      <span className="text-orange-700">COD</span>
-      <span className="font-medium text-orange-700">
-        ₹{(o.total_amount - o.partial_payment_amount).toFixed(2)}
-      </span>
-    </div>
-  </>
-)}
+                      <>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-green-700">Advance</span>
+                          <span className="font-medium text-green-700">
+                            ₹{o.partial_payment_amount}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-xs">
+                          <span className="text-orange-700">COD</span>
+                          <span className="font-medium text-orange-700">
+                            ₹
+                            {(
+                              o.total_amount - o.partial_payment_amount
+                            ).toFixed(2)}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
 
-                  {/* Refund info */}
                   {o.order_status === "refund" && o.refund_reason && (
                     <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 mb-3 text-xs">
                       <p className="text-purple-800">
@@ -284,7 +291,6 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
-                  {/* Payment button if pending */}
                   {needsPayment && (
                     <Link
                       href={`/payment/${o.id}`}
@@ -303,4 +309,4 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-                              }
+        }
