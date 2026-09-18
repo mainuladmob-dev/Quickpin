@@ -297,8 +297,12 @@ export default function MyOrdersPage() {
                       className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
                     >
                       {lang === "bn"
-                        ? "পেমেন্ট সম্পূর্ণ করুন"
-                        : "Complete Payment"}
+  ? (o.paid_amount || 0) > 0
+    ? "COD পরিশোধ করুন"
+    : "Advance পরিশোধ করুন"
+  : (o.paid_amount || 0) > 0
+  ? "Pay COD"
+  : "Pay Advance"}
                     </Link>
                   )}
                 </div>
