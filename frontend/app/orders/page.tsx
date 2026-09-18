@@ -248,22 +248,21 @@ export default function MyOrdersPage() {
                       </span>
                     </div>
                     {o.payment_type === "partial" && (
-                      <>
-                        <div className="flex justify-between text-xs text-green-700">
-                          <span>{t("paid_now")}</span>
-                          <span className="font-medium">
-                            ₹{o.paid_amount}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs text-orange-700">
-                          <span>{t("pay_later")}</span>
-                          <span className="font-medium">
-                            ₹{o.remaining_amount}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
+  <>
+    <div className="flex justify-between text-xs">
+      <span className="text-green-700">Advance</span>
+      <span className="font-medium text-green-700">
+        ₹{o.partial_payment_amount}
+      </span>
+    </div>
+    <div className="flex justify-between text-xs">
+      <span className="text-orange-700">COD</span>
+      <span className="font-medium text-orange-700">
+        ₹{(o.total_amount - o.partial_payment_amount).toFixed(2)}
+      </span>
+    </div>
+  </>
+)}
 
                   {/* Refund info */}
                   {o.order_status === "refund" && o.refund_reason && (
