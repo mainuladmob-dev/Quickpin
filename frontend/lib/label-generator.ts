@@ -214,4 +214,4 @@ export async function generateLabelPDF(
   }
 
   pdf.save(filename);
-        }
+}
