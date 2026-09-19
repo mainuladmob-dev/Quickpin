@@ -126,10 +126,16 @@ const handleAddToCart = async () => {
       </div>
 
       <button
-        onClick={handleAddToCart}
-        disabled={adding || !inStock}
-        className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold py-2 rounded-lg transition disabled:opacity-50"
-      >
+  onClick={handleAddToCart}
+  className={`w-full py-2.5 rounded-lg font-medium transition ${
+    added
+      ? "bg-green-500 text-white"
+      : "bg-blue-600 hover:bg-blue-700 text-white"
+  }`}
+>
+  {added ? "✓ Added" : "Add to Cart"}
+</button>
+        
         {adding
           ? "..."
           : inStock
