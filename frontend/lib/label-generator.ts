@@ -5,13 +5,15 @@ type LabelOrder = {
   order_number: string;
   created_at: string;
   total_amount: number;
-  delivery_type: string;                    // ✅ NEW
+  delivery_type: string;
   delivery_address_snapshot: any;
-  profiles?: { name: string | null; email: string | null; phone?: string | null } | null;
+  profiles?:
+    | { name: string | null; email: string | null; phone?: string | null }
+    | null;
   pickup_point?: string | null;
-  paid_amount?: number;                     // ✅ NEW (PREPAID/COD detect)
-  payment_type?: string;                    // ✅ NEW
-  partial_payment_amount?: number;          // ✅ NEW
+  paid_amount?: number;
+  payment_type?: string;
+  partial_payment_amount?: number;
 };
 
 function formatDate(dateStr: string) {
@@ -90,7 +92,7 @@ export async function generateLabelPDF(
     pdf.setDrawColor(200, 200, 200);
     pdf.line(x + 4, y + 28, x + labelW - 4, y + 28);
 
-    // ✅ Section header — different for pickup
+    // Section header
     pdf.setFontSize(8);
     pdf.setTextColor(120, 120, 120);
     pdf.text(isPickup ? "PICKUP BY:" : "DELIVER TO:", x + 4, y + 34);
@@ -117,7 +119,7 @@ export async function generateLabelPDF(
     }
 
     if (isPickup) {
-      // ✅ SELF PICKUP — show pickup point
+      // SELF PICKUP
       pdf.setFontSize(8);
       pdf.setTextColor(120, 120, 120);
       pdf.text("PICKUP FROM:", x + 4, cy);
@@ -134,15 +136,14 @@ export async function generateLabelPDF(
         cy += 5;
       });
 
-      // SELF PICKUP badge
       pdf.setFillColor(255, 237, 213);
-      pdf.roundedRect(x + 4, cy + 2, 40, 7, 2, 2, "F");
+      pdf.roundedRect(x + 4, cy + 2, 42, 7, 2, 2, "F");
       pdf.setTextColor(194, 65, 12);
       pdf.setFontSize(8);
       pdf.setFont("helvetica", "bold");
-      pdf.text("🚶 SELF PICKUP", x + 6, cy + 7);
+      pdf.text("SELF PICKUP", x + 8, cy + 7);
     } else {
-      // HOME DELIVERY — show full address
+      // HOME DELIVERY
       const addrLines: string[] = [];
       if (addr.address_line1) addrLines.push(addr.address_line1);
       if (addr.address_line2) addrLines.push(addr.address_line2);
@@ -175,7 +176,7 @@ export async function generateLabelPDF(
     pdf.setFont("helvetica", "bold");
     pdf.text(`Rs.${order.total_amount}`, x + 4, y + 105);
 
-    // ✅ Payment badge — PREPAID or COD
+    // Payment badge
     const alreadyPaid = order.paid_amount || 0;
     const isPartial = order.payment_type === "partial";
     const codAmount = isPartial
@@ -184,11 +185,9 @@ export async function generateLabelPDF(
 
     pdf.setFontSize(8);
     if (isPartial && codAmount > 0) {
-      // Advance + COD
       pdf.setTextColor(234, 88, 12);
-      pdf.text(`COD: Rs.${codAmount.toFixed(2)}`, x + labelW - 32, y + 105);
+      pdf.text(`COD: Rs.${codAmount.toFixed(2)}`, x + labelW - 34, y + 105);
     } else {
-      // Full paid
       pdf.setTextColor(22, 163, 74);
       pdf.text("PREPAID", x + labelW - 25, y + 105);
     }
@@ -215,4 +214,4 @@ export async function generateLabelPDF(
   }
 
   pdf.save(filename);
-             }
+        }
