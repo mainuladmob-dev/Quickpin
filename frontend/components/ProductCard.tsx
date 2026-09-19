@@ -62,7 +62,43 @@ export default function ProductCard({ product }: { product: Product }) {
     }
 
     setAdding(false);
-    router.push("/cart");
+    // ✅ components/ProductCard.tsx
+
+const handleAddToCart = async () => {
+  // 1. Login check
+  if (!user) {
+    // Google sign-in force
+    await signInWithGoogle();
+    return;
+  }
+
+  // 2. Cart এ add (existing logic)
+  const { data: existing } = await supabase
+    .from("cart")
+    .select("id, quantity")
+    .eq("user_id", user.id)
+    .eq("product_id", product.id)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from("cart")
+      .update({ quantity: existing.quantity + 1 })
+      .eq("id", existing.id);
+  } else {
+    await supabase.from("cart").insert({
+      user_id: user.id,
+      product_id: product.id,
+      quantity: 1,
+    });
+  }
+
+  // 3. ✅ Toast show (redirect না!)
+  setAdded(true);
+  setTimeout(() => setAdded(false), 1500);
+
+  // 4. ✅ Floating button কে notify করো
+  window.dispatchEvent(new Event("cart-updated"));
   };
 
   return (
