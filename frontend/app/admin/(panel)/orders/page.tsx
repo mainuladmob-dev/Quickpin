@@ -216,10 +216,11 @@ export default function AdminOrdersPage() {
   };
 
   const canPrintLabel = (order: Order) =>
-    (order.order_status === "current" ||
-      order.order_status === "out_for_delivery" ||
-      order.order_status === "refund") &&
-    order.delivery_type === "home_delivery";
+  (order.order_status === "current" ||
+    order.order_status === "out_for_delivery" ||
+    order.order_status === "refund") &&
+  (order.delivery_type === "home_delivery" ||
+    order.delivery_type === "self_pickup");
 
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
