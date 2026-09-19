@@ -5,9 +5,13 @@ type LabelOrder = {
   order_number: string;
   created_at: string;
   total_amount: number;
+  delivery_type: string;                    // ✅ NEW
   delivery_address_snapshot: any;
-  profiles?: { name: string | null; email: string | null } | null;
+  profiles?: { name: string | null; email: string | null; phone?: string | null } | null;
   pickup_point?: string | null;
+  paid_amount?: number;                     // ✅ NEW (PREPAID/COD detect)
+  payment_type?: string;                    // ✅ NEW
+  partial_payment_amount?: number;          // ✅ NEW
 };
 
 function formatDate(dateStr: string) {
@@ -60,6 +64,8 @@ export async function generateLabelPDF(
     const x = marginX + col * (labelW + gapX);
     const y = marginY + row * (labelH + gapY);
 
+    const isPickup = order.delivery_type === "self_pickup";
+
     // Border
     pdf.setDrawColor(0, 0, 0);
     pdf.setLineWidth(0.3);
@@ -84,11 +90,12 @@ export async function generateLabelPDF(
     pdf.setDrawColor(200, 200, 200);
     pdf.line(x + 4, y + 28, x + labelW - 4, y + 28);
 
-    // TO section
+    // ✅ Section header — different for pickup
     pdf.setFontSize(8);
     pdf.setTextColor(120, 120, 120);
-    pdf.text("DELIVER TO:", x + 4, y + 34);
+    pdf.text(isPickup ? "PICKUP BY:" : "DELIVER TO:", x + 4, y + 34);
 
+    // Customer name
     pdf.setTextColor(0, 0, 0);
     pdf.setFontSize(11);
     pdf.setFont("helvetica", "bold");
@@ -102,27 +109,57 @@ export async function generateLabelPDF(
 
     let cy = y + 48;
 
-    if (addr.phone) {
-      pdf.text(`Phone: ${addr.phone}`, x + 4, cy);
+    // Phone
+    const phone = addr.phone || order.profiles?.phone || "";
+    if (phone) {
+      pdf.text(`Phone: ${phone}`, x + 4, cy);
       cy += 6;
     }
 
-    const addrLines: string[] = [];
-    if (addr.address_line1) addrLines.push(addr.address_line1);
-    if (addr.address_line2) addrLines.push(addr.address_line2);
-    if (addr.city && addr.state && addr.pincode) {
-      addrLines.push(`${addr.city}, ${addr.state} - ${addr.pincode}`);
-    } else if (addr.city) {
-      addrLines.push(addr.city);
-    }
+    if (isPickup) {
+      // ✅ SELF PICKUP — show pickup point
+      pdf.setFontSize(8);
+      pdf.setTextColor(120, 120, 120);
+      pdf.text("PICKUP FROM:", x + 4, cy);
+      cy += 5;
 
-    addrLines.forEach((line) => {
-      const wrapped = pdf.splitTextToSize(line, labelW - 8);
-      wrapped.forEach((w: string) => {
-        pdf.text(w, x + 4, cy);
+      pdf.setFontSize(10);
+      pdf.setTextColor(0, 0, 0);
+      pdf.setFont("helvetica", "bold");
+
+      const pickupAddr = order.pickup_point || "Quickpin Store";
+      const pickupLines = pdf.splitTextToSize(pickupAddr, labelW - 8);
+      pickupLines.forEach((line: string) => {
+        pdf.text(line, x + 4, cy);
         cy += 5;
       });
-    });
+
+      // SELF PICKUP badge
+      pdf.setFillColor(255, 237, 213);
+      pdf.roundedRect(x + 4, cy + 2, 40, 7, 2, 2, "F");
+      pdf.setTextColor(194, 65, 12);
+      pdf.setFontSize(8);
+      pdf.setFont("helvetica", "bold");
+      pdf.text("🚶 SELF PICKUP", x + 6, cy + 7);
+    } else {
+      // HOME DELIVERY — show full address
+      const addrLines: string[] = [];
+      if (addr.address_line1) addrLines.push(addr.address_line1);
+      if (addr.address_line2) addrLines.push(addr.address_line2);
+      if (addr.city && addr.state && addr.pincode) {
+        addrLines.push(`${addr.city}, ${addr.state} - ${addr.pincode}`);
+      } else if (addr.city) {
+        addrLines.push(addr.city);
+      }
+
+      addrLines.forEach((line) => {
+        const wrapped = pdf.splitTextToSize(line, labelW - 8);
+        wrapped.forEach((w: string) => {
+          pdf.text(w, x + 4, cy);
+          cy += 5;
+        });
+      });
+    }
 
     // Divider
     pdf.setDrawColor(200, 200, 200);
@@ -138,9 +175,23 @@ export async function generateLabelPDF(
     pdf.setFont("helvetica", "bold");
     pdf.text(`Rs.${order.total_amount}`, x + 4, y + 105);
 
+    // ✅ Payment badge — PREPAID or COD
+    const alreadyPaid = order.paid_amount || 0;
+    const isPartial = order.payment_type === "partial";
+    const codAmount = isPartial
+      ? (order.total_amount || 0) - (order.partial_payment_amount || 0)
+      : (order.total_amount || 0) - alreadyPaid;
+
     pdf.setFontSize(8);
-    pdf.setTextColor(22, 163, 74);
-    pdf.text("PREPAID", x + labelW - 25, y + 105);
+    if (isPartial && codAmount > 0) {
+      // Advance + COD
+      pdf.setTextColor(234, 88, 12);
+      pdf.text(`COD: Rs.${codAmount.toFixed(2)}`, x + labelW - 32, y + 105);
+    } else {
+      // Full paid
+      pdf.setTextColor(22, 163, 74);
+      pdf.text("PREPAID", x + labelW - 25, y + 105);
+    }
 
     // QR Code
     const qrData = `ORDER:${order.order_number}|AMOUNT:${order.total_amount}|NAME:${name}`;
@@ -164,4 +215,4 @@ export async function generateLabelPDF(
   }
 
   pdf.save(filename);
-        }
+             }
