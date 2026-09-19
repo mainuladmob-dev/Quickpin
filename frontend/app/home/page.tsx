@@ -208,9 +208,12 @@ export default function HomePage() {
         </div>
       )}
 
-      <footer className="text-center py-6 text-xs text-gray-400">
+            <footer className="text-center py-6 text-xs text-gray-400">
         {t("copyright")}
       </footer>
+
+      {/* ✅ Floating Cart Button */}
+      <FloatingCartButton />
     </div>
   );
 }
