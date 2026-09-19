@@ -1,0 +1,23 @@
+name: Supabase Full Backup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Dump database
+        run: |
+          pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f quickpin-backup.sql
+          ls -lh quickpin-backup.sql
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickpin-database-backup
+          path: quickpin-backup.sql
+          retention-days: 90
