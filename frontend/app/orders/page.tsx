@@ -192,7 +192,13 @@ export default function MyOrdersPage() {
           <div className="space-y-3">
             {orders.map((o) => {
               const status = getStatusInfo(o.order_status);
-              const needsPayment = o.payment_status === "pending";
+
+              const remainingAmount = (
+                o.total_amount - (o.paid_amount || 0)
+              ).toFixed(2);
+
+              const isPartialAdvancePaid =
+                o.payment_type === "partial" && (o.paid_amount || 0) > 0;
 
               return (
                 <div
@@ -291,20 +297,44 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
+                  {/* ✅ Payment Button / COD Info */}
                   {(o.paid_amount || 0) < o.total_amount && (
-  <Link
-    href={`/payment/${o.id}`}
-                      className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
-                    >
-                      {lang === "bn"
-  ? (o.paid_amount || 0) > 0
-    ? "COD পরিশোধ করুন"
-    : "Advance পরিশোধ করুন"
-  : (o.paid_amount || 0) > 0
-  ? "Pay COD"
-  : "Pay Advance"}
-                    </Link>
+                    <>
+                      {isPartialAdvancePaid ? (
+                        // Partial + Advance paid → Disabled button with COD message
+                        <button
+                          disabled
+                          className="block w-full text-center bg-gray-300 text-gray-600 font-semibold py-3 rounded-lg text-sm cursor-not-allowed"
+                        >
+                          {lang === "bn"
+                            ? `💵 বাকি ₹${remainingAmount} Cash on Delivery তে পরিশোধ করুন`
+                            : `💵 Remaining ₹${remainingAmount} to be paid via Cash on Delivery`}
+                        </button>
+                      ) : (
+                        // Full or Partial without advance → Active payment button
+                        <Link
+                          href={`/payment/${o.id}`}
+                          className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
+                        >
+                          {o.payment_type === "full"
+                            ? lang === "bn"
+                              ? "সম্পূর্ণ পেমেন্ট করুন"
+                              : "Complete Payment"
+                            : lang === "bn"
+                            ? "Advance পরিশোধ করুন"
+                            : "Pay Advance"}
+                        </Link>
+                      )}
+                    </>
                   )}
+
+                  {/* Fully paid indicator */}
+                  {(o.paid_amount || 0) >= o.total_amount &&
+                    o.payment_status === "success" && (
+                      <div className="block w-full text-center bg-green-50 border border-green-200 text-green-700 font-medium py-2.5 rounded-lg text-sm">
+                        {lang === "bn" ? "✅ পরিশোধিত" : "✅ Paid"}
+                      </div>
+                    )}
                 </div>
               );
             })}
