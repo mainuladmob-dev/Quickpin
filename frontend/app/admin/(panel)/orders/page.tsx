@@ -108,7 +108,11 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [activeTab, activeOrderType]);
 
-  const changeStatus = async (orderId: string, newStatus: string, extra?: any) => {
+  const changeStatus = async (
+    orderId: string,
+    newStatus: string,
+    extra?: any
+  ) => {
     const order = orders.find((o) => o.id === orderId);
 
     const updates: any = {
@@ -215,12 +219,13 @@ export default function AdminOrdersPage() {
     }
   };
 
+  // ✅ UPDATED: home_delivery + self_pickup both supported
   const canPrintLabel = (order: Order) =>
-  (order.order_status === "current" ||
-    order.order_status === "out_for_delivery" ||
-    order.order_status === "refund") &&
-  (order.delivery_type === "home_delivery" ||
-    order.delivery_type === "self_pickup");
+    (order.order_status === "current" ||
+      order.order_status === "out_for_delivery" ||
+      order.order_status === "refund") &&
+    (order.delivery_type === "home_delivery" ||
+      order.delivery_type === "self_pickup");
 
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
@@ -250,102 +255,21 @@ export default function AdminOrdersPage() {
     setGeneratingLabel(false);
   };
 
+  // ✅ SIMPLIFIED: Uses generateLabelPDF (supports self_pickup + home_delivery)
   const handleBulkPrint = async () => {
     const validOrders = orders.filter(
       (o) => selected.includes(o.id) && canPrintLabel(o)
     );
     if (validOrders.length === 0) return alert("No printable orders selected");
+
     setGeneratingLabel(true);
     try {
-      const jsPDF = (await import("jspdf")).default;
-      const QRCode = (await import("qrcode")).default;
-      const pdf = new jsPDF({
-        orientation: "portrait",
-        unit: "mm",
-        format: "a4",
-      });
-      const labelW = 95,
-        labelH = 140,
-        marginX = 8,
-        marginY = 8,
-        gapX = 4,
-        gapY = 4;
-      const labelsPerRow = 2,
-        perPage = 4;
-
-      for (let i = 0; i < validOrders.length; i++) {
-        const order = validOrders[i];
-        const idx = i % perPage;
-        if (i > 0 && idx === 0) pdf.addPage();
-        const col = idx % labelsPerRow;
-        const row = Math.floor(idx / labelsPerRow);
-        const x = marginX + col * (labelW + gapX);
-        const y = marginY + row * (labelH + gapY);
-
-        pdf.setDrawColor(0, 0, 0);
-        pdf.rect(x, y, labelW, labelH);
-        pdf.setFillColor(37, 99, 235);
-        pdf.rect(x, y, labelW, 12, "F");
-        pdf.setTextColor(255, 255, 255);
-        pdf.setFontSize(14);
-        pdf.setFont("helvetica", "bold");
-        pdf.text("Quickpin", x + labelW / 2, y + 8, { align: "center" });
-
-        pdf.setTextColor(0, 0, 0);
-        pdf.setFontSize(9);
-        pdf.setFont("helvetica", "normal");
-        pdf.text(`Order: ${order.order_number}`, x + 4, y + 20);
-        const d = new Date(order.created_at);
-        pdf.text(`Date: ${d.toLocaleDateString("en-IN")}`, x + 4, y + 25);
-
-        const addr = order.delivery_address_snapshot || {};
-        pdf.setFontSize(11);
-        pdf.setFont("helvetica", "bold");
-        pdf.text(addr.full_name || "Customer", x + 4, y + 38);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(9);
-
-        let cy = y + 45;
-        if (addr.phone) {
-          pdf.text(`Phone: ${addr.phone}`, x + 4, cy);
-          cy += 5;
-        }
-        if (addr.address_line1) {
-          pdf.text(addr.address_line1, x + 4, cy);
-          cy += 5;
-        }
-        if (addr.city) {
-          pdf.text(
-            `${addr.city}, ${addr.state || ""} - ${addr.pincode || ""}`,
-            x + 4,
-            cy
-          );
-          cy += 5;
-        }
-
-        pdf.setFontSize(14);
-        pdf.setTextColor(37, 99, 235);
-        pdf.setFont("helvetica", "bold");
-        pdf.text(`Rs.${order.total_amount}`, x + 4, y + 100);
-
-        try {
-          const qrData = `ORDER:${order.order_number}|AMOUNT:${order.total_amount}`;
-          const qrUrl = await QRCode.toDataURL(qrData, { width: 200 });
-          pdf.addImage(qrUrl, "PNG", x + labelW - 32, y + 30, 28, 28);
-        } catch (e) {}
-
-        pdf.setFontSize(7);
-        pdf.setTextColor(150, 150, 150);
-        pdf.setFont("helvetica", "normal");
-        pdf.text("Thank you for shopping", x + labelW / 2, y + labelH - 5, {
-          align: "center",
-        });
-      }
-
-      const blob = pdf.output("bloburl");
-      window.open(blob, "_blank");
+      await generateLabelPDF(
+        validOrders,
+        `labels-bulk-${validOrders.length}.pdf`
+      );
     } catch (err: any) {
-      alert("Print failed: " + err.message);
+      alert("Bulk print failed: " + err.message);
     }
     setGeneratingLabel(false);
   };
@@ -511,4 +435,4 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-            }
+}
