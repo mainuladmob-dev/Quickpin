@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useLanguage } from "@/lib/i18n/LanguageContext";
 import UserMenu from "@/components/UserMenu";
 import ProductCard from "@/components/ProductCard";
+import FloatingCartButton from "@/components/FloatingCartButton";
 
 type Product = {
   id: string;
