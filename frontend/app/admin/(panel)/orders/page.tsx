@@ -219,7 +219,6 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // ✅ UPDATED: home_delivery + self_pickup both supported
   const canPrintLabel = (order: Order) =>
     (order.order_status === "current" ||
       order.order_status === "out_for_delivery" ||
@@ -255,7 +254,6 @@ export default function AdminOrdersPage() {
     setGeneratingLabel(false);
   };
 
-  // ✅ SIMPLIFIED: Uses generateLabelPDF (supports self_pickup + home_delivery)
   const handleBulkPrint = async () => {
     const validOrders = orders.filter(
       (o) => selected.includes(o.id) && canPrintLabel(o)
@@ -435,4 +433,4 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-}
+      }
