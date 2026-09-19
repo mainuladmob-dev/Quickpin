@@ -74,16 +74,15 @@ export default function PaymentPage() {
       setUpiId(upi);
       setManualQrUrl(map.upi_qr_image || "");
 
-      // Calculate amount to pay
       const alreadyPaid = orderData.data.paid_amount || 0;
       const totalAmount = orderData.data.total_amount || 0;
 
       let amountToPay = 0;
       if (orderData.data.payment_type === "partial") {
         if (alreadyPaid > 0) {
-          amountToPay = totalAmount - alreadyPaid;   // COD
+          amountToPay = totalAmount - alreadyPaid;
         } else {
-          amountToPay = orderData.data.partial_payment_amount;  // Advance
+          amountToPay = orderData.data.partial_payment_amount;
         }
       } else {
         amountToPay = totalAmount - alreadyPaid;
@@ -118,6 +117,10 @@ export default function PaymentPage() {
       : totalAmount - alreadyPaid;
 
   const isFullyPaid = alreadyPaid >= totalAmount;
+
+  // ✅ NEW: Advance paid + COD remaining
+  const isPartialAdvancePaid =
+    order?.payment_type === "partial" && alreadyPaid > 0;
 
   const handlePayNow = () => {
     if (!order) return;
@@ -206,9 +209,10 @@ export default function PaymentPage() {
     );
   }
 
-  // Fully paid screen
-  if (isFullyPaid) {
+  // ✅ Success screen — Full paid OR Partial advance paid
+  if (isFullyPaid || isPartialAdvancePaid) {
     const isPartial = order.payment_type === "partial";
+    const codAmount = order.total_amount - alreadyPaid;
 
     return (
       <div className="min-h-screen bg-gray-50">
@@ -223,7 +227,7 @@ export default function PaymentPage() {
         <div className="max-w-2xl mx-auto px-4 py-12 text-center">
           <p className="text-6xl mb-4">🎉</p>
           <h1 className="text-2xl font-bold text-green-600 mb-2">
-            {isPartial
+            {isPartial && !isFullyPaid
               ? lang === "bn"
                 ? "Advance পেয়েছি!"
                 : "Advance Received!"
@@ -234,23 +238,41 @@ export default function PaymentPage() {
             <strong>{order.order_number}</strong>
           </p>
 
-          {isPartial && (
+          {isPartial && !isFullyPaid && (
             <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 my-6">
               <p className="text-xs text-orange-700 mb-1 font-medium">
                 Advance
               </p>
               <p className="text-lg font-bold text-green-600 mb-3">
-                ₹{order.partial_payment_amount.toFixed(2)} ✅
+                ₹{alreadyPaid.toFixed(2)} ✅
               </p>
 
               <div className="border-t border-orange-200 pt-3">
                 <p className="text-xs text-orange-700 mb-1 font-medium">
-                  COD (ডেলিভারিতে দিতে হবে)
+                  {lang === "bn"
+                    ? "COD (ডেলিভারিতে দিতে হবে)"
+                    : "COD (Pay on delivery)"}
                 </p>
                 <p className="text-2xl font-bold text-orange-600">
-                  ₹{(order.total_amount - order.partial_payment_amount).toFixed(2)}
+                  ₹{codAmount.toFixed(2)}
+                </p>
+                <p className="text-xs text-orange-600 mt-2">
+                  {lang === "bn"
+                    ? "ডেলিভারির সময় নগদ পরিশোধ করুন"
+                    : "Pay cash on delivery"}
                 </p>
               </div>
+            </div>
+          )}
+
+          {isFullyPaid && !isPartial && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4 my-6">
+              <p className="text-xs text-green-700 mb-1 font-medium">
+                {lang === "bn" ? "পরিশোধিত" : "Paid"}
+              </p>
+              <p className="text-2xl font-bold text-green-600">
+                ₹{alreadyPaid.toFixed(2)} ✅
+              </p>
             </div>
           )}
 
@@ -278,7 +300,6 @@ export default function PaymentPage() {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
-        {/* Amount Header */}
         <div className="text-center mb-6">
           <p className="text-sm text-gray-500 mb-1">
             {lang === "bn" ? "অর্ডার নম্বর" : "Order Number"}
@@ -287,34 +308,20 @@ export default function PaymentPage() {
             {order.order_number}
           </p>
           <p className="text-sm text-gray-500 mb-1">
-            {alreadyPaid > 0
-              ? lang === "bn"
-                ? "COD বাকি আছে"
-                : "COD Due"
-              : lang === "bn"
-              ? "পরিশোধ করতে হবে"
-              : "Amount to pay"}
+            {lang === "bn" ? "পরিশোধ করতে হবে" : "Amount to pay"}
           </p>
           <p className="text-4xl font-bold text-blue-600">
             ₹{amountToPay.toFixed(2)}
           </p>
-          {order.payment_type === "partial" && alreadyPaid === 0 && (
+          {order.payment_type === "partial" && (
             <p className="text-xs text-gray-500 mt-2">
               {lang === "bn"
                 ? `মোট ₹${order.total_amount} এর মধ্যে advance`
                 : `Advance of total ₹${order.total_amount}`}
             </p>
           )}
-          {order.payment_type === "partial" && alreadyPaid > 0 && (
-            <p className="text-xs text-orange-600 mt-2">
-              {lang === "bn"
-                ? `Advance ₹${alreadyPaid} পেয়েছি, বাকি COD`
-                : `Advance ₹${alreadyPaid} received, remaining COD`}
-            </p>
-          )}
         </div>
 
-        {/* Rejection Warning */}
         {order.rejection_reason && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 text-sm text-red-700">
             <p className="font-medium mb-1">⚠️ Previous screenshot rejected</p>
@@ -322,10 +329,8 @@ export default function PaymentPage() {
           </div>
         )}
 
-        {/* Payment Card */}
         <div className="bg-white rounded-2xl p-5 mb-4">
           <div className="flex flex-col md:flex-row gap-5 items-center">
-            {/* Left: UPI App */}
             <div className="flex-1 w-full">
               <button
                 onClick={handlePayNow}
@@ -359,14 +364,12 @@ export default function PaymentPage() {
               </div>
             </div>
 
-            {/* Divider */}
             <div className="flex md:flex-col items-center gap-2 w-full md:w-auto">
               <div className="flex-1 md:flex-none md:w-px md:h-10 h-px bg-gray-200"></div>
               <span className="text-xs text-gray-400 font-medium">OR</span>
               <div className="flex-1 md:flex-none md:w-px md:h-10 h-px bg-gray-200"></div>
             </div>
 
-            {/* Right: QR */}
             <div className="flex-1 w-full text-center">
               <p className="text-xs text-gray-500 mb-2">
                 {lang === "bn" ? "QR স্ক্যান করুন" : "Scan QR Code"}
@@ -383,7 +386,6 @@ export default function PaymentPage() {
             </div>
           </div>
 
-          {/* UPI ID + Toggle */}
           <div className="mt-4 pt-4 border-t border-gray-100 text-center">
             <div className="bg-gray-50 rounded-lg p-2 mb-3 inline-block text-xs">
               <span className="text-gray-500">UPI: </span>
@@ -417,7 +419,6 @@ export default function PaymentPage() {
           </div>
         </div>
 
-        {/* Screenshot Upload */}
         {order.screenshot_status === "pending" ? (
           <div className="bg-yellow-50 border border-yellow-200 rounded-2xl p-4 mb-4 text-sm text-yellow-800 text-center">
             ⏳{" "}
@@ -477,7 +478,6 @@ export default function PaymentPage() {
           </div>
         )}
 
-        {/* Summary */}
         <div className="bg-white rounded-2xl p-5 text-sm">
           <h3 className="font-semibold text-gray-800 mb-3">📋 Summary</h3>
           <div className="space-y-2 text-gray-600">
@@ -508,4 +508,4 @@ export default function PaymentPage() {
       </div>
     </div>
   );
-              }
+        }
