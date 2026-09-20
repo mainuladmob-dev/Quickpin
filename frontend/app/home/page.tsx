@@ -42,6 +42,9 @@ export default function HomePage() {
   const [topBanner, setTopBanner] = useState<Banner | null>(null);
   const [footerBanner, setFooterBanner] = useState<Banner | null>(null);
   const [loading, setLoading] = useState(true);
+  
+  // ✅ নতুন: ক্লিক করা ক্যাটাগরি ট্র্যাক করার জন্য স্টেট
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -81,6 +84,11 @@ export default function HomePage() {
   const getName = (item: { name_bn: string; name_en: string }) =>
     lang === "bn" ? item.name_bn : item.name_en;
 
+  // ✅ নতুন: ক্যাটাগরি অনুযায়ী প্রোডাক্ট ফিল্টার করার লজিক
+  const filteredProducts = activeCategory
+    ? products.filter((p) => p.category_id === activeCategory)
+    : products;
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top Banner */}
@@ -116,7 +124,8 @@ export default function HomePage() {
       </header>
 
       <div className="max-w-6xl mx-auto px-4 py-6">
-        {/* Categories */}
+        
+        {/* ✅ Categories: নতুন stylish টেক্সট-ট্যাব ডিজাইন */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-800">
@@ -125,47 +134,51 @@ export default function HomePage() {
           </div>
 
           {loading ? (
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-              {[...Array(6)].map((_, i) => (
-                <div key={i} className="bg-white rounded-xl p-3 animate-pulse">
-                  <div className="w-12 h-12 bg-gray-200 rounded-full mx-auto mb-2"></div>
-                  <div className="h-3 bg-gray-200 rounded"></div>
-                </div>
+            /* লোডিং এর সময় ছোট ট্যাবের অ্যানিমেশন */
+            <div className="flex gap-2">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="h-10 w-24 bg-gray-200 rounded-full animate-pulse"></div>
               ))}
             </div>
           ) : categories.length === 0 ? (
-            <div className="bg-white rounded-xl p-6 text-center text-gray-500 text-sm">
+            <div className="bg-white rounded-xl p-4 text-center text-gray-500 text-sm">
               No categories yet
             </div>
           ) : (
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
+            /* হরাইজন্টাল স্ক্রলিং ট্যাব (কোনো ছবি বা লোগো নেই) */
+            <div className="flex overflow-x-auto gap-2 pb-2 scrollbar-hide">
+              
+              {/* 'All' বা 'সব' বাটন */}
+              <button
+                onClick={() => setActiveCategory(null)}
+                className={`px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap shadow-sm transition-all duration-200 ${
+                  activeCategory === null
+                    ? "bg-blue-600 text-white shadow-blue-200"
+                    : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                {lang === "bn" ? "সব" : "All"}
+              </button>
+
+              {/* ডাটাবেস থেকে আসা ক্যাটাগরিগুলো */}
               {categories.map((cat) => (
-                <Link
+                <button
                   key={cat.id}
-                  href={`/category/${cat.slug}`}
-                  className="bg-white rounded-xl p-3 shadow-sm hover:shadow-md transition flex flex-col items-center"
+                  onClick={() => setActiveCategory(cat.id)} // ক্লিক করলে ফিল্টার ও হাইলাইট হবে
+                  className={`px-5 py-2.5 rounded-full text-sm font-semibold whitespace-nowrap shadow-sm transition-all duration-200 ${
+                    activeCategory === cat.id
+                      ? "bg-blue-600 text-white shadow-blue-200" // একটিভ থাকলে নীল হবে
+                      : "bg-white border border-gray-200 text-gray-700 hover:bg-gray-50" // নিষ্ক্রিয় থাকলে সাদা হবে
+                  }`}
                 >
-                  {cat.image ? (
-                    <img
-                      src={cat.image}
-                      alt={getName(cat)}
-                      className="w-12 h-12 rounded-full object-cover mb-2"
-                    />
-                  ) : (
-                    <div className="w-12 h-12 bg-blue-100 rounded-full mb-2 flex items-center justify-center text-blue-600 font-bold text-lg">
-                      {getName(cat).charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-700 text-center line-clamp-2 font-medium">
-                    {getName(cat)}
-                  </p>
-                </Link>
+                  {getName(cat)}
+                </button>
               ))}
             </div>
           )}
         </div>
 
-        {/* Products */}
+        {/* ✅ Products: ফিল্টার করা প্রোডাক্ট দেখানো */}
         <div className="mb-8">
           <h2 className="text-xl font-bold text-gray-800 mb-4">
             {t("products")}
@@ -181,13 +194,13 @@ export default function HomePage() {
                 </div>
               ))}
             </div>
-          ) : products.length === 0 ? (
+          ) : filteredProducts.length === 0 ? (
             <div className="bg-white rounded-xl p-6 text-center text-gray-500 text-sm">
-              No products yet
+              No products found in this category
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {products.map((p) => (
+              {filteredProducts.map((p) => (
                 <ProductCard key={p.id} product={p} />
               ))}
             </div>
@@ -208,7 +221,7 @@ export default function HomePage() {
         </div>
       )}
 
-            <footer className="text-center py-6 text-xs text-gray-400">
+      <footer className="text-center py-6 text-xs text-gray-400">
         {t("copyright")}
       </footer>
 
