@@ -59,7 +59,6 @@ export default function HomePage() {
           .select("id, name_bn, name_en, price, stock, images, category_id")
           .eq("is_active", true)
           .order("created_at", { ascending: false })
-          .limit(12),
         supabase.from("banners").select("*").eq("is_active", true),
       ]);
 
