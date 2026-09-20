@@ -1,6 +1,6 @@
-import HomeUI from '@/components/HomeUI';
+import HomeUI from '../../components/HomeUI';
 
-export default function Home() {
+export default function NewHomePage() {
   return (
     <main>
       <HomeUI />
