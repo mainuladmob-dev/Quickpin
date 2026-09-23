@@ -106,6 +106,7 @@ export default function OrdersTable({
   onToggleSelect,
   onToggleSelectAll,
   onStatusChange,
+  onMarkRefundDone,
   onDelete,
   onView,
   onDownload,
@@ -117,6 +118,7 @@ export default function OrdersTable({
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: () => void;
   onStatusChange: (order: Order, status: string) => void;
+  onMarkRefundDone: (order: Order) => void;
   onDelete: (order: Order) => void;
   onView: (order: Order) => void;
   onDownload: (order: Order) => void;
@@ -163,10 +165,10 @@ export default function OrdersTable({
           const refundAmount = Number(o.refund_amount || 0);
           const netRealized = Math.max(0, grossBill - refundAmount);
           const isRefund = o.order_status === "refund" || refundAmount > 0;
-          const isRefundSuccess =
+          const isRefundSettled =
             isRefund &&
-            (Boolean(o.transaction_ref) ||
-              o.refund_status === "success" ||
+            (o.refund_status === "success" ||
+              Boolean(o.transaction_ref) ||
               o.payment_status === "refunded");
 
           const baseCod = grossBill - Number(o.partial_payment_amount || 0);
@@ -226,12 +228,12 @@ export default function OrdersTable({
                       {isRefund && (
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                            isRefundSuccess
+                            isRefundSettled
                               ? "bg-emerald-50 text-emerald-700 border-emerald-300"
                               : "bg-amber-50 text-amber-700 border-amber-300 animate-pulse"
                           }`}
                         >
-                          {isRefundSuccess ? "✓ Settled" : "⏳ Action Pending"}
+                          {isRefundSettled ? "✓ Settled" : "⏳ Action Pending"}
                         </span>
                       )}
                     </div>
@@ -290,7 +292,7 @@ export default function OrdersTable({
                   </div>
                 )}
               </div>
-                      {/* Packaged Items */}
+                              {/* Packaged Items */}
               {orderItems.length > 0 && (
                 <div className="bg-white rounded-lg border border-slate-200 p-3 mb-3 space-y-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -423,12 +425,23 @@ export default function OrdersTable({
                   </select>
                 )}
 
+                {/* Delivered Order -> Initiate Refund */}
                 {o.order_status === "delivered" && (
                   <button
                     onClick={() => onStatusChange(o, "refund")}
-                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 flex-shrink-0"
                   >
                     🔄 Initiate Refund
+                  </button>
+                )}
+
+                {/* Refund Order -> Mark Payment Done Button */}
+                {o.order_status === "refund" && !isRefundSettled && (
+                  <button
+                    onClick={() => onMarkRefundDone(o)}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shadow-xs flex-shrink-0"
+                  >
+                    💳 Mark Payment Done
                   </button>
                 )}
 
@@ -436,7 +449,7 @@ export default function OrdersTable({
                   <button
                     onClick={() => onDownload(o)}
                     disabled={generatingLabel}
-                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs"
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs flex-shrink-0"
                   >
                     📥 Label
                   </button>
@@ -445,7 +458,7 @@ export default function OrdersTable({
                 {o.order_status === "spam" && (
                   <button
                     onClick={() => onDelete(o)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition flex items-center gap-1 flex-shrink-0"
                   >
                     🗑️ Delete Order (Keep Profile)
                   </button>
@@ -457,4 +470,5 @@ export default function OrdersTable({
       </div>
     </div>
   );
-                      }
+                }
+                
