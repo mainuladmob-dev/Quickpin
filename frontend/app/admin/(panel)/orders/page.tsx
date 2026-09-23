@@ -208,7 +208,7 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
-        // 100% Automated Financial Engine (Delivered & Refund keep Gross intact)
+
   const financialStats = useMemo(() => {
     let grossDelivered = 0;
     let totalRefunded = 0;
@@ -329,7 +329,6 @@ export default function AdminOrdersPage() {
       updates.remaining_amount = order.total_amount - paidAmount;
     } else if (newStatus === "refund") {
       updates.payment_status = "refunded";
-      // Defaults to pending unless explicitly marked
       if (!updates.refund_status) {
         updates.refund_status = extra?.transaction_ref ? "success" : "pending";
       }
@@ -363,12 +362,11 @@ export default function AdminOrdersPage() {
     if (ok) fetchOrders();
   };
 
-  // Step 2: Refund ট্যাবে থাকা অর্ডারের পেমেন্ট পাঠানো শেষ হলে এক ক্লিকে "Mark Done" করা
   const handleMarkRefundDone = async (order: Order) => {
     const inputRef = prompt(
       `Mark Refund of ₹${order.refund_amount || order.total_amount} as Paid/Done?\n\nEnter Bank Ref / UTR (Optional, or press OK if Cash):`
     );
-    if (inputRef === null) return; // User cancelled
+    if (inputRef === null) return;
 
     const updates: any = {
       refund_status: "success",
@@ -391,9 +389,7 @@ export default function AdminOrdersPage() {
 
     fetchOrders();
   };
-
-  // Step 1: Delivered অর্ডার থেকে রিফান্ড তৈরি করা (স্বয়ংক্রিয়ভাবে Pending স্ট্যাটাস নিয়ে Refund ট্যাবে যাবে)
-  const submitRefund = async (data: {
+        const submitRefund = async (data: {
     reason: string;
     amount: number;
     method: string;
@@ -585,7 +581,8 @@ export default function AdminOrdersPage() {
     orders
       .filter((o) => selected.includes(o.id))
       .every((o) => o.order_status === "spam");
-       return (
+
+  return (
     <div className="space-y-4">
       {/* 1. Operating Date Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -883,5 +880,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-            }
-        
+      }
+          
