@@ -10,12 +10,13 @@ import { generateLabelPDF } from "@/lib/label-generator";
 
 type Order = any;
 
+// ১. সঠিক সিকোয়েন্স অনুযায়ী পাইপলাইন স্ট্যাটাস
 const STATUSES = [
-  { value: "current", label: "Current Orders" },
-  { value: "pending", label: "Pending" },
+  { value: "current", label: "Current Order" },
   { value: "out_for_delivery", label: "Out for Delivery" },
   { value: "delivered", label: "Delivered" },
   { value: "refund", label: "Refund" },
+  { value: "pending", label: "Pending Order" },
   { value: "spam", label: "Spam" },
 ];
 
@@ -43,14 +44,13 @@ const ORDER_TYPES = [
   },
 ];
 
-// Helper: Get Today's Date in YYYY-MM-DD format (Timezone Safe)
+// Helper: Timezone Safe Date Strings
 function getTodayDateString(): string {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
   return new Date(now.getTime() - offset).toISOString().split("T")[0];
 }
 
-// Helper: Get Yesterday's Date in YYYY-MM-DD format
 function getYesterdayDateString(): string {
   const date = new Date();
   date.setDate(date.getDate() - 1);
@@ -58,7 +58,6 @@ function getYesterdayDateString(): string {
   return new Date(date.getTime() - offset).toISOString().split("T")[0];
 }
 
-// Helper: 100% English Item Name Resolver
 function resolveItemName(item: any): string {
   const p = item?.products || item?.product || {};
   return (
@@ -75,7 +74,6 @@ function resolveItemName(item: any): string {
   );
 }
 
-// Helper: Format order items for PDF Engine
 function formatOrdersForPrint(orderList: Order[]): Order[] {
   return orderList.map((o) => {
     const rawItems = Array.isArray(o.order_items)
@@ -127,7 +125,7 @@ export default function AdminOrdersPage() {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [printedOrderIds, setPrintedOrderIds] = useState<string[]>([]);
 
-  // Update URL Query params when date changes
+  // Sync Date with URL Parameter
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
     const params = new URLSearchParams(searchParams.toString());
@@ -157,11 +155,9 @@ export default function AdminOrdersPage() {
     }
 
     if (selectedDate) {
-      const start = new Date(`${selectedDate}T00:00:00.000Z`);
-      const end = new Date(`${selectedDate}T23:59:59.999Z`);
-      query = query
-        .gte("created_at", start.toISOString())
-        .lte("created_at", end.toISOString());
+      const start = `${selectedDate}T00:00:00.000Z`;
+      const end = `${selectedDate}T23:59:59.999Z`;
+      query = query.gte("created_at", start).lte("created_at", end);
     }
 
     const { data, error } = await query;
@@ -218,7 +214,7 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
 
-  // 2. Financial Metrics (00 on empty days)
+  // 2. Financial Metrics (00 State Guaranteed on empty days)
   const financialStats = useMemo(() => {
     let grossDelivered = 0;
     let totalRefunded = 0;
@@ -295,7 +291,7 @@ export default function AdminOrdersPage() {
     return Object.values(summaryMap);
   }, [orders]);
 
-  // 4. Strict State Transition Logic
+  // 4. Strict State Transition Logic & Spam Guard Rules
   const changeStatus = async (
     orderId: string,
     newStatus: string,
@@ -304,15 +300,23 @@ export default function AdminOrdersPage() {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return false;
 
-    // RULE 1: Pending order can ONLY transition to "current" or "spam"
+    // RULE 1: Current Order ebong Out for Delivery kokhono Spam-e jabe na
+    if (newStatus === "spam") {
+      if (order.order_status === "current" || order.order_status === "out_for_delivery") {
+        alert("Action Blocked: 'Current Order' (in packing) and 'Out for Delivery' orders cannot be moved to Spam.");
+        return false;
+      }
+    }
+
+    // RULE 2: Pending orders can ONLY move to 'current' or 'spam'
     if (order.order_status === "pending" && !["current", "spam"].includes(newStatus)) {
-      alert("Validation Error: Pending orders can only be moved to 'Current Orders' or 'Spam'.");
+      alert("Action Blocked: Pending orders can only be moved to 'Current Order' or 'Spam'.");
       return false;
     }
 
-    // RULE 2: Refund is strictly blocked unless Delivered
+    // RULE 3: Refund strictly locked unless Delivered
     if (newStatus === "refund" && order.order_status !== "delivered") {
-      alert("Validation Error: Refunds can only be initiated on 'Delivered' orders.");
+      alert("Action Blocked: Refunds can only be initiated on 'Delivered' orders.");
       return false;
     }
 
@@ -335,6 +339,7 @@ export default function AdminOrdersPage() {
       updates.remaining_amount = order.total_amount - paidAmount;
     } else if (newStatus === "refund") {
       updates.payment_status = "refunded";
+      updates.refund_status = extra?.transaction_ref ? "success" : "pending";
     } else if (newStatus === "spam") {
       updates.payment_status = "failed";
     }
@@ -372,17 +377,16 @@ export default function AdminOrdersPage() {
       return alert("Refunds cannot be applied in bulk. Process them individually on Delivered orders.");
     }
 
-    const invalidPending = orders.filter(
-      (o) =>
-        selected.includes(o.id) &&
-        o.order_status === "pending" &&
-        !["current", "spam"].includes(bulkStatus)
-    );
-
-    if (invalidPending.length > 0) {
-      return alert(
-        `Blocked: ${invalidPending.length} order(s) are 'Pending'. Pending orders can only be moved to 'Current Orders' or 'Spam'.`
+    // Check Spam Block on Active Operations
+    if (bulkStatus === "spam") {
+      const invalidOperationalOrders = orders.filter(
+        (o) => selected.includes(o.id) && ["current", "out_for_delivery"].includes(o.order_status)
       );
+      if (invalidOperationalOrders.length > 0) {
+        return alert(
+          `Security Alert: ${invalidOperationalOrders.length} order(s) are currently in Packing/Delivery. They cannot be marked as Spam.`
+        );
+      }
     }
 
     if (!confirm(`Change ${selected.length} orders to "${bulkStatus}"?`)) return;
@@ -392,11 +396,19 @@ export default function AdminOrdersPage() {
     fetchOrders();
   };
 
+  // 5. Spam Order Deletion (Preserves Customer Profile, Phone & Address Record)
   const handleDelete = async (order: Order) => {
     if (order.order_status !== "spam") {
-      return alert("Only spam orders can be deleted permanently.");
+      return alert("Only spam orders can be deleted.");
     }
-    if (!confirm(`Permanently delete spam order ${order.order_number}?`)) return;
+    if (
+      !confirm(
+        `Delete spam order #${order.order_number}?\n\nNote: Customer profile, phone number, and address records will remain permanently saved in the system for fraud tracking.`
+      )
+    )
+      return;
+
+    // Delete only from orders table (order_items cascade, profiles remain untouched)
     const { error } = await supabase.from("orders").delete().eq("id", order.id);
     if (error) return alert(error.message);
     fetchOrders();
@@ -410,7 +422,12 @@ export default function AdminOrdersPage() {
     if (spamSelected.length !== selected.length) {
       return alert("Some selected orders are not marked as spam.");
     }
-    if (!confirm(`Permanently delete ${spamSelected.length} spam orders?`)) return;
+    if (
+      !confirm(
+        `Permanently delete ${spamSelected.length} spam orders?\n\nCustomer profile history, phone numbers, and addresses will remain safely kept in database.`
+      )
+    )
+      return;
 
     for (const o of spamSelected) {
       await supabase.from("orders").delete().eq("id", o.id);
@@ -424,6 +441,8 @@ export default function AdminOrdersPage() {
     amount: number;
     method: string;
     note: string;
+    product_name?: string;
+    transaction_ref?: string;
   }) => {
     if (!refundOrder) return;
     setSavingRefund(true);
@@ -431,10 +450,12 @@ export default function AdminOrdersPage() {
     try {
       await supabase.from("refunds").insert({
         order_id: refundOrder.id,
+        product_name: data.product_name || "Entire Order / Issue",
         amount: data.amount,
-        refund_method: data.method,
-        reason: data.reason || "other",
+        refund_method: data.method.toLowerCase(),
+        reason: data.reason || "rotten",
         customer_upi: refundOrder.customer_upi || refundOrder.upi_id || null,
+        transaction_ref: data.transaction_ref || null,
         refunded_at: new Date().toISOString(),
       });
     } catch (e) {
@@ -446,6 +467,8 @@ export default function AdminOrdersPage() {
       refund_amount: data.amount,
       refund_method: data.method,
       refund_note: data.note || null,
+      transaction_ref: data.transaction_ref || null,
+      refund_status: data.transaction_ref ? "success" : "pending",
       refunded_at: new Date().toISOString(),
     });
 
@@ -455,7 +478,7 @@ export default function AdminOrdersPage() {
       fetchOrders();
     }
   };
-      const canPrintLabel = (order: Order) => Boolean(order);
+        const canPrintLabel = (order: Order) => Boolean(order);
 
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
@@ -593,7 +616,7 @@ export default function AdminOrdersPage() {
           <p className="text-xl font-bold text-slate-800 mt-1">
             {financialStats.totalOrders < 10 ? `0${financialStats.totalOrders}` : financialStats.totalOrders}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Filtered Date</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Date Filtered</p>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
@@ -604,7 +627,7 @@ export default function AdminOrdersPage() {
             ₹{financialStats.grossDelivered.toFixed(2)}
           </p>
           <p className="text-[10px] text-slate-400 mt-0.5">
-            {financialStats.deliveredCount} Order(s) Delivered
+            {financialStats.deliveredCount} Delivered Orders
           </p>
         </div>
 
@@ -615,7 +638,7 @@ export default function AdminOrdersPage() {
           <p className="text-xl font-bold text-rose-600 mt-1">
             - ₹{financialStats.totalRefunded.toFixed(2)}
           </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Deductions</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">Claims Deductions</p>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-xs">
@@ -625,11 +648,11 @@ export default function AdminOrdersPage() {
           <p className="text-xl font-black text-emerald-700 mt-1">
             ₹{financialStats.netSales.toFixed(2)}
           </p>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Earned Revenue</p>
+          <p className="text-[10px] text-emerald-600 mt-0.5">Earned Net</p>
         </div>
       </div>
 
-      {/* 3. Filters: Order Type & Status Pipeline */}
+      {/* 3. Filter Pipelines: Order Type & Correct Sequence Tabs */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 shadow-xs">
         <div>
           <p className="text-[11px] text-slate-500 font-semibold mb-1.5 uppercase tracking-wider">
@@ -661,12 +684,13 @@ export default function AdminOrdersPage() {
               onClick={() => setActiveTab("all")}
               className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
                 activeTab === "all"
-                  ? "bg-blue-600 text-white shadow-xs"
+                  ? "bg-slate-900 text-white shadow-xs"
                   : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
               }`}
             >
               All Orders
             </button>
+            {/* 1. Current -> 2. Out for delivery -> 3. Delivered -> 4. Refund -> 5. Pending -> 6. Spam */}
             {STATUSES.map((s) => (
               <button
                 key={s.value}
@@ -684,7 +708,7 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
-      {/* 4. Bulk Action Controls */}
+      {/* 4. Bulk Actions */}
       {selected.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold text-blue-900">
@@ -696,10 +720,10 @@ export default function AdminOrdersPage() {
             className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg text-slate-900 bg-white"
           >
             <option value="">Move Status To...</option>
-            <option value="current">Current Orders</option>
+            <option value="current">Current Order</option>
             <option value="out_for_delivery">Out for Delivery</option>
             <option value="delivered">Delivered</option>
-            <option value="spam">Spam</option>
+            <option value="spam">Spam (Fraud Protection)</option>
           </select>
           <button
             onClick={handleBulkStatus}
@@ -725,8 +749,9 @@ export default function AdminOrdersPage() {
             <button
               onClick={handleBulkDelete}
               className="bg-red-600 hover:bg-red-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold"
+              title="Deletes spam orders while preserving customer profiles permanently"
             >
-              Delete Selected
+              Delete Spam (Keep Profiles)
             </button>
           )}
           <button
@@ -837,5 +862,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-    }
-          
+        }
+              
