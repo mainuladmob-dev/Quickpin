@@ -10,7 +10,6 @@ import { generateLabelPDF } from "@/lib/label-generator";
 
 type Order = any;
 
-// ১. সঠিক সিকোয়েন্স অনুযায়ী পাইপলাইন স্ট্যাটাস
 const STATUSES = [
   { value: "current", label: "Current Order" },
   { value: "out_for_delivery", label: "Out for Delivery" },
@@ -44,7 +43,6 @@ const ORDER_TYPES = [
   },
 ];
 
-// Helper: Timezone Safe Date Strings
 function getTodayDateString(): string {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
@@ -69,7 +67,6 @@ function resolveItemName(item: any): string {
     p.title ||
     item.title ||
     p.name_bn ||
-    item.name_bn ||
     "Product Item"
   );
 }
@@ -125,7 +122,6 @@ export default function AdminOrdersPage() {
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [printedOrderIds, setPrintedOrderIds] = useState<string[]>([]);
 
-  // Sync Date with URL Parameter
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
     const params = new URLSearchParams(searchParams.toString());
@@ -137,7 +133,6 @@ export default function AdminOrdersPage() {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
-  // 1. Fetch Orders strictly mapped to calendar date
   const fetchOrders = async () => {
     setLoading(true);
     let query = supabase
@@ -192,7 +187,7 @@ export default function AdminOrdersPage() {
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, name, email, phone")
+        .select("id, name, email, phone, upi_id")
         .in("id", userIds);
 
       (profiles || []).forEach((p: any) => {
@@ -214,7 +209,7 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
 
-  // 2. Financial Metrics (00 State Guaranteed on empty days)
+  // Automated Financial Engine
   const financialStats = useMemo(() => {
     let grossDelivered = 0;
     let totalRefunded = 0;
@@ -224,10 +219,11 @@ export default function AdminOrdersPage() {
       const orderTotal = Number(o.total_amount || 0);
       const refundVal = Number(o.refund_amount || 0);
 
-      if (o.order_status === "delivered") {
+      if (o.order_status === "delivered" || o.order_status === "refund") {
         grossDelivered += orderTotal;
         deliveredCount += 1;
       }
+
       if (refundVal > 0 || o.order_status === "refund") {
         totalRefunded += refundVal > 0 ? refundVal : orderTotal;
       }
@@ -244,7 +240,6 @@ export default function AdminOrdersPage() {
     };
   }, [orders]);
 
-  // 3. Master Item Picklist (Consolidated strictly from Current Orders)
   const itemSummary = useMemo(() => {
     const currentOrders = orders.filter((o) => o.order_status === "current");
     const summaryMap: Record<
@@ -290,8 +285,7 @@ export default function AdminOrdersPage() {
 
     return Object.values(summaryMap);
   }, [orders]);
-
-  // 4. Strict State Transition Logic & Spam Guard Rules
+      // 4. Strict State Transition Logic & Spam Guard Rules
   const changeStatus = async (
     orderId: string,
     newStatus: string,
@@ -300,7 +294,7 @@ export default function AdminOrdersPage() {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return false;
 
-    // RULE 1: Current Order ebong Out for Delivery kokhono Spam-e jabe na
+    // Current Order ebong Out for Delivery kokhono Spam-e jabe na
     if (newStatus === "spam") {
       if (order.order_status === "current" || order.order_status === "out_for_delivery") {
         alert("Action Blocked: 'Current Order' (in packing) and 'Out for Delivery' orders cannot be moved to Spam.");
@@ -308,13 +302,13 @@ export default function AdminOrdersPage() {
       }
     }
 
-    // RULE 2: Pending orders can ONLY move to 'current' or 'spam'
+    // Pending orders can ONLY move to 'current' or 'spam'
     if (order.order_status === "pending" && !["current", "spam"].includes(newStatus)) {
       alert("Action Blocked: Pending orders can only be moved to 'Current Order' or 'Spam'.");
       return false;
     }
 
-    // RULE 3: Refund strictly locked unless Delivered
+    // Refund strictly locked unless Delivered
     if (newStatus === "refund" && order.order_status !== "delivered") {
       alert("Action Blocked: Refunds can only be initiated on 'Delivered' orders.");
       return false;
@@ -377,7 +371,6 @@ export default function AdminOrdersPage() {
       return alert("Refunds cannot be applied in bulk. Process them individually on Delivered orders.");
     }
 
-    // Check Spam Block on Active Operations
     if (bulkStatus === "spam") {
       const invalidOperationalOrders = orders.filter(
         (o) => selected.includes(o.id) && ["current", "out_for_delivery"].includes(o.order_status)
@@ -396,7 +389,6 @@ export default function AdminOrdersPage() {
     fetchOrders();
   };
 
-  // 5. Spam Order Deletion (Preserves Customer Profile, Phone & Address Record)
   const handleDelete = async (order: Order) => {
     if (order.order_status !== "spam") {
       return alert("Only spam orders can be deleted.");
@@ -408,7 +400,6 @@ export default function AdminOrdersPage() {
     )
       return;
 
-    // Delete only from orders table (order_items cascade, profiles remain untouched)
     const { error } = await supabase.from("orders").delete().eq("id", order.id);
     if (error) return alert(error.message);
     fetchOrders();
@@ -443,6 +434,7 @@ export default function AdminOrdersPage() {
     note: string;
     product_name?: string;
     transaction_ref?: string;
+    customer_upi?: string;
   }) => {
     if (!refundOrder) return;
     setSavingRefund(true);
@@ -450,16 +442,25 @@ export default function AdminOrdersPage() {
     try {
       await supabase.from("refunds").insert({
         order_id: refundOrder.id,
-        product_name: data.product_name || "Entire Order / Issue",
+        product_name: data.product_name || "Granular Item Refund",
         amount: data.amount,
         refund_method: data.method.toLowerCase(),
         reason: data.reason || "rotten",
-        customer_upi: refundOrder.customer_upi || refundOrder.upi_id || null,
+        customer_upi: data.customer_upi || refundOrder.customer_upi || null,
         transaction_ref: data.transaction_ref || null,
         refunded_at: new Date().toISOString(),
       });
     } catch (e) {
-      console.warn("Audit table log skipped:", e);
+      console.warn("Audit table log note:", e);
+    }
+
+    if (refundOrder.user_id && data.customer_upi) {
+      try {
+        await supabase
+          .from("profiles")
+          .update({ upi_id: data.customer_upi })
+          .eq("id", refundOrder.user_id);
+      } catch {}
     }
 
     const ok = await changeStatus(refundOrder.id, "refund", {
@@ -468,6 +469,7 @@ export default function AdminOrdersPage() {
       refund_method: data.method,
       refund_note: data.note || null,
       transaction_ref: data.transaction_ref || null,
+      customer_upi: data.customer_upi || refundOrder.customer_upi || null,
       refund_status: data.transaction_ref ? "success" : "pending",
       refunded_at: new Date().toISOString(),
     });
@@ -478,7 +480,8 @@ export default function AdminOrdersPage() {
       fetchOrders();
     }
   };
-        const canPrintLabel = (order: Order) => Boolean(order);
+
+  const canPrintLabel = (order: Order) => Boolean(order);
 
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
@@ -560,307 +563,4 @@ export default function AdminOrdersPage() {
     orders
       .filter((o) => selected.includes(o.id))
       .every((o) => o.order_status === "spam");
-
-  return (
-    <div className="space-y-4">
-      {/* 1. Universal Top Date Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            📅 Operating Date:
-          </span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => handleDateChange(e.target.value)}
-            className="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => handleDateChange(getTodayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
-              selectedDate === getTodayDateString()
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            Today
-          </button>
-          <button
-            onClick={() => handleDateChange(getYesterdayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
-              selectedDate === getYesterdayDateString()
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            Yesterday
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => setShowSummaryModal(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-xs transition"
-          >
-            📋 Master Picklist ({itemSummary.length} Items)
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Financial KPI Cards (Strict Universal Template - Shows 00 if no data) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Total Orders
-          </p>
-          <p className="text-xl font-bold text-slate-800 mt-1">
-            {financialStats.totalOrders < 10 ? `0${financialStats.totalOrders}` : financialStats.totalOrders}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Date Filtered</p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Gross Delivered
-          </p>
-          <p className="text-xl font-bold text-blue-600 mt-1">
-            ₹{financialStats.grossDelivered.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            {financialStats.deliveredCount} Delivered Orders
-          </p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Total Refunded
-          </p>
-          <p className="text-xl font-bold text-rose-600 mt-1">
-            - ₹{financialStats.totalRefunded.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Claims Deductions</p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-xs">
-          <p className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wide">
-            Actual Net Sales
-          </p>
-          <p className="text-xl font-black text-emerald-700 mt-1">
-            ₹{financialStats.netSales.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Earned Net</p>
-        </div>
-      </div>
-
-      {/* 3. Filter Pipelines: Order Type & Correct Sequence Tabs */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 shadow-xs">
-        <div>
-          <p className="text-[11px] text-slate-500 font-semibold mb-1.5 uppercase tracking-wider">
-            Order Delivery & Payment Type
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {ORDER_TYPES.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => setActiveOrderType(t.value)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                  activeOrderType === t.value
-                    ? "bg-purple-600 text-white shadow-xs"
-                    : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="text-[11px] text-slate-500 font-semibold mb-1.5 uppercase tracking-wider">
-            Order Pipeline Status
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                activeTab === "all"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
-              }`}
-            >
-              All Orders
-            </button>
-            {/* 1. Current -> 2. Out for delivery -> 3. Delivered -> 4. Refund -> 5. Pending -> 6. Spam */}
-            {STATUSES.map((s) => (
-              <button
-                key={s.value}
-                onClick={() => setActiveTab(s.value)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                  activeTab === s.value
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Bulk Actions */}
-      {selected.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-blue-900">
-            Selected: {selected.length}
-          </span>
-          <select
-            value={bulkStatus}
-            onChange={(e) => setBulkStatus(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg text-slate-900 bg-white"
-          >
-            <option value="">Move Status To...</option>
-            <option value="current">Current Order</option>
-            <option value="out_for_delivery">Out for Delivery</option>
-            <option value="delivered">Delivered</option>
-            <option value="spam">Spam (Fraud Protection)</option>
-          </select>
-          <button
-            onClick={handleBulkStatus}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold"
-          >
-            Apply
-          </button>
-          <button
-            onClick={handleBulkPrint}
-            disabled={generatingLabel}
-            className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50"
-          >
-            🖨️ Print ({selected.length})
-          </button>
-          <button
-            onClick={handleBulkDownload}
-            disabled={generatingLabel}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50"
-          >
-            📥 Download ({selected.length})
-          </button>
-          {allSelectedSpam && (
-            <button
-              onClick={handleBulkDelete}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold"
-              title="Deletes spam orders while preserving customer profiles permanently"
-            >
-              Delete Spam (Keep Profiles)
-            </button>
-          )}
-          <button
-            onClick={() => setSelected([])}
-            className="text-xs text-slate-600 hover:underline"
-          >
-            Clear Selection
-          </button>
-        </div>
-      )}
-
-      {/* 5. Orders Table View */}
-      {loading ? (
-        <div className="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-xs">Loading orders for {selectedDate}...</p>
-        </div>
-      ) : orders.length === 0 ? (
-        <div className="bg-white rounded-xl p-10 text-center text-slate-500 border border-slate-200">
-          <p className="text-base font-semibold text-slate-700">No orders found</p>
-          <p className="text-xs text-slate-400 mt-1">
-            There are 00 records for the selected date ({selectedDate}).
-          </p>
-        </div>
-      ) : (
-        <OrdersTable
-          orders={orders}
-          selected={selected}
-          onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
-          onStatusChange={handleSingleStatus}
-          onDelete={handleDelete}
-          onView={(o) => setViewingOrder(o)}
-          onDownload={handleSingleDownload}
-          canPrintLabel={canPrintLabel}
-          generatingLabel={generatingLabel}
-        />
-      )}
-
-      {/* 6. Master Item Picklist Modal */}
-      {showSummaryModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] flex flex-col">
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">📋 Master Item Picklist</h3>
-                <p className="text-xs text-slate-500">
-                  Target Date: <span className="font-semibold text-slate-800">{selectedDate}</span> (Current Orders Only)
-                </p>
-              </div>
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-xl font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="overflow-y-auto flex-1 pr-1 space-y-2">
-              {itemSummary.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-8">
-                  No active "Current Orders" available for procurement on this date.
-                </p>
-              ) : (
-                itemSummary.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-lg text-xs border border-slate-100">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                      <p className="text-slate-500 text-[11px]">Requested in {item.orderCount} order(s)</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
-                        Total: {item.totalQty} Units{item.totalWeight > 0 ? ` (${item.totalWeight.toFixed(2)} Kg)` : ""}
-                      </span>      
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="pt-3 border-t border-slate-100 mt-3 flex justify-end">
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="px-4 py-1.5 text-xs text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 font-semibold"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modals */}
-      {viewingOrder && (
-        <OrderDetailModal
-          order={viewingOrder}
-          onClose={() => setViewingOrder(null)}
-        />
-      )}
-
-      {refundOrder && (
-        <RefundModal
-          order={refundOrder}
-          onClose={() => setRefundOrder(null)}
-          onSubmit={submitRefund}
-          saving={savingRefund}
-        />
-      )}
-    </div>
-  );
-        }
-              
+        
