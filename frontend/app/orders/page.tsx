@@ -7,6 +7,17 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useUser } from "@/lib/auth/useUser";
 import UserMenu from "@/components/UserMenu";
 
+// ✅ ১. প্রোডাক্ট আইটেমের টাইপ যোগ করা হলো
+type OrderItem = {
+  id?: string;
+  name?: string;
+  product_name?: string;
+  title?: string;
+  quantity?: number;
+  price?: number;
+  image?: string;
+};
+
 type Order = {
   id: string;
   order_number: string;
@@ -21,6 +32,7 @@ type Order = {
   refund_reason: string | null;
   refund_amount: number | null;
   created_at: string;
+  items?: OrderItem[] | null; // ✅ নতুন ফিল্ড
 };
 
 const STATUS_LABELS: Record<
@@ -75,13 +87,26 @@ export default function MyOrdersPage() {
         return;
       }
 
-      const { data } = await supabase
+      // ✅ ২. ডিফেন্সিভ কুয়েরি লজিক: প্রথমে items সহ চেষ্টা করবে
+      let { data, error } = await supabase
         .from("orders")
         .select(
-          "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
+          "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at, items"
         )
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
+
+      // যদি ডেটাবেজে items কলাম সরাসরি না থাকে, তবে আগের স্টাইলে ফেচ করবে যাতে পেজ কখনো ফাঁকা বা ক্র্যাশ না হয়
+      if (error) {
+        const fallback = await supabase
+          .from("orders")
+          .select(
+            "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
+          )
+          .eq("user_id", user.id)
+          .order("created_at", { ascending: false });
+        data = fallback.data;
+      }
 
       setOrders(data || []);
       setLoading(false);
@@ -250,6 +275,35 @@ export default function MyOrdersPage() {
                     </div>
                   </div>
 
+                  {/* ✅ ৩. প্রোডাক্টের তালিকা দেখানোর নতুন সেকশন */}
+                  {o.items && Array.isArray(o.items) && o.items.length > 0 && (
+                    <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+                        {lang === "bn" ? "অর্ডার করা আইটেম" : "Ordered Items"}
+                      </p>
+                      <div className="space-y-1.5">
+                        {o.items.map((item, idx) => (
+                          <div
+                            key={item.id || idx}
+                            className="flex items-center justify-between text-sm"
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-800 font-medium">
+                                {item.name || item.product_name || item.title || "Item"}
+                              </span>
+                              <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                ×{item.quantity || 1}
+                              </span>
+                            </div>
+                            <span className="text-gray-700 font-medium">
+                              ₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="bg-gray-50 rounded-lg p-3 mb-3">
                     <div className="flex justify-between text-sm mb-1">
                       <span className="text-gray-600">{t("total")}</span>
@@ -297,11 +351,10 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
-                  {/* ✅ Payment Button / COD Info */}
+                  {/* Payment Button / COD Info */}
                   {(o.paid_amount || 0) < o.total_amount && (
                     <>
                       {isPartialAdvancePaid ? (
-                        // Partial + Advance paid → Disabled button with COD message
                         <button
                           disabled
                           className="block w-full text-center bg-gray-300 text-gray-600 font-semibold py-3 rounded-lg text-sm cursor-not-allowed"
@@ -311,7 +364,6 @@ export default function MyOrdersPage() {
                             : `💵 Remaining ₹${remainingAmount} to be paid via Cash on Delivery`}
                         </button>
                       ) : (
-                        // Full or Partial without advance → Active payment button
                         <Link
                           href={`/payment/${o.id}`}
                           className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
@@ -343,4 +395,5 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-        }
+              }
+                              
