@@ -13,8 +13,12 @@ type OrderItem = {
   product_name?: string;
   title?: string;
   quantity?: number;
+  qty?: number;
+  count?: number;
   price?: number;
+  unit_price?: number;
   image?: string;
+  [key: string]: any;
 };
 
 type Order = {
@@ -31,7 +35,9 @@ type Order = {
   refund_reason: string | null;
   refund_amount: number | null;
   created_at: string;
-  items?: OrderItem[] | null;
+  items?: any;
+  order_items?: any;
+  [key: string]: any;
 };
 
 const STATUS_LABELS: Record<
@@ -86,26 +92,42 @@ export default function MyOrdersPage() {
         return;
       }
 
-      let { data, error } = await supabase
+      let fetchedOrders: any[] = [];
+
+      // ১. প্রথমে সব কলাম সহ ফেচ করার চেষ্টা করবে
+      const { data: allData, error: allError } = await supabase
         .from("orders")
-        .select(
-          "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at, items"
-        )
+        .select("*, order_items(*)")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (error) {
-        const fallback = await supabase
+      if (!allError && allData) {
+        fetchedOrders = allData;
+      } else {
+        // ২. যদি রিলেশন না থাকে, তবে orders টেবিলের সমস্ত ডেটা সরাসরি আনবে
+        const { data: fallbackData, error: fallbackError } = await supabase
           .from("orders")
-          .select(
-            "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
-          )
+          .select("*")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
-        data = fallback.data;
+
+        if (!fallbackError && fallbackData) {
+          fetchedOrders = fallbackData;
+        } else {
+          // ৩. নিরাপদ ব্যাকআপ: আপনার পুরোনো অরিজিনাল কুয়েরি
+          const { data: originalData } = await supabase
+            .from("orders")
+            .select(
+              "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
+            )
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false });
+
+          fetchedOrders = originalData || [];
+        }
       }
 
-      setOrders(data || []);
+      setOrders(fetchedOrders as Order[]);
       setLoading(false);
     };
 
@@ -222,6 +244,20 @@ export default function MyOrdersPage() {
               const isPartialAdvancePaid =
                 o.payment_type === "partial" && (o.paid_amount || 0) > 0;
 
+              // প্রোডাক্ট আইটেম বের করার নিরাপদ লজিক
+              let orderItems: any[] = [];
+              if (Array.isArray(o.items)) {
+                orderItems = o.items;
+              } else if (Array.isArray(o.order_items)) {
+                orderItems = o.order_items;
+              } else if (typeof o.items === "string") {
+                try {
+                  orderItems = JSON.parse(o.items);
+                } catch {
+                  orderItems = [];
+                }
+              }
+
               return (
                 <div
                   key={o.id}
@@ -272,31 +308,44 @@ export default function MyOrdersPage() {
                     </div>
                   </div>
 
-                  {/* প্রোডাক্টের তালিকা */}
-                  {o.items && Array.isArray(o.items) && o.items.length > 0 && (
+                  {/* অর্ডার করা প্রোডাক্টের তালিকা */}
+                  {orderItems.length > 0 && (
                     <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                         {lang === "bn" ? "অর্ডার করা আইটেম" : "Ordered Items"}
                       </p>
                       <div className="space-y-1.5">
-                        {o.items.map((item, idx) => (
-                          <div
-                            key={item.id || idx}
-                            className="flex items-center justify-between text-sm"
-                          >
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-800 font-medium">
-                                {item.name || item.product_name || item.title || "Item"}
-                              </span>
-                              <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                                ×{item.quantity || 1}
+                        {orderItems.map((item: any, idx: number) => {
+                          const itemName =
+                            item.name ||
+                            item.product_name ||
+                            item.title ||
+                            item.product?.name ||
+                            item.product?.title ||
+                            "Item";
+                          const itemQty =
+                            item.quantity || item.qty || item.count || 1;
+                          const itemPrice = item.price || item.unit_price || 0;
+
+                          return (
+                            <div
+                              key={item.id || idx}
+                              className="flex items-center justify-between text-sm"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span className="text-gray-800 font-medium">
+                                  {itemName}
+                                </span>
+                                <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                                  ×{itemQty}
+                                </span>
+                              </div>
+                              <span className="text-gray-700 font-medium">
+                                ₹{(itemPrice * itemQty).toFixed(2)}
                               </span>
                             </div>
-                            <span className="text-gray-700 font-medium">
-                              ₹{((item.price || 0) * (item.quantity || 1)).toFixed(2)}
-                            </span>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -348,6 +397,7 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
+                  {/* Payment Button / COD Info */}
                   {(o.paid_amount || 0) < o.total_amount && (
                     <>
                       {isPartialAdvancePaid ? (
@@ -376,6 +426,7 @@ export default function MyOrdersPage() {
                     </>
                   )}
 
+                  {/* Fully paid indicator */}
                   {(o.paid_amount || 0) >= o.total_amount &&
                     o.payment_status === "success" && (
                       <div className="block w-full text-center bg-green-50 border border-green-200 text-green-700 font-medium py-2.5 rounded-lg text-sm">
@@ -390,5 +441,5 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-                  }
-
+    }
+            
