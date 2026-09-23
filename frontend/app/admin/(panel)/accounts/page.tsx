@@ -4,52 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type OrderItem = {
-  id?: string;
-  product_name?: string;
-  name?: string;
-  price?: number;
-  unit_price?: number;
-  quantity?: number;
-  qty?: number;
-};
+type Order = any;
 
-type Order = {
-  id: string;
-  order_number: string;
-  delivery_type: string;
-  payment_type: string;
-  total_amount: number;
-  paid_amount?: number;
-  remaining_amount?: number;
-  partial_payment_amount?: number;
-  payment_status: string;
-  order_status: string;
-  refund_amount?: number | null;
-  refund_method?: string | null;
-  refund_reason?: string | null;
-  created_at: string;
-  delivered_at?: string | null;
-  customer_name?: string | null;
-  customer_phone?: string | null;
-  order_items?: OrderItem[];
-  items?: OrderItem[];
-  profiles?: {
-    name?: string | null;
-    phone?: string | null;
-  } | null;
-};
-
-type RefundItem = {
-  id: string;
-  order_id: string;
-  amount: number;
-  refund_method: string;
-  reason: string;
-  refunded_at: string;
-};
-
-// Helper: Timezone Safe Date Strings
 function getTodayDateString(): string {
   const now = new Date();
   const offset = now.getTimezoneOffset() * 60000;
@@ -73,11 +29,11 @@ export default function AdminAccountsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(
     queryDate || getTodayDateString()
   );
-  const [deliveredOrders, setDeliveredOrders] = useState<Order[]>([]);
-  const [refundRecords, setRefundRecords] = useState<RefundItem[]>([]);
+
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Sync Date with URL
+  // Sync Date with URL Bar
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
     const params = new URLSearchParams(searchParams.toString());
@@ -89,101 +45,137 @@ export default function AdminAccountsPage() {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
-  // 1. Fetch Delivered Orders and Recorded Refunds for Selected Date
-  const fetchSettlementData = async () => {
+  const fetchFinancials = async () => {
     setLoading(true);
-
-    const start = `${selectedDate}T00:00:00.000Z`;
-    const end = `${selectedDate}T23:59:59.999Z`;
-
-    // Fetch orders that were delivered or marked refund on this operating date
-    const ordersQuery = supabase
+    let query = supabase
       .from("orders")
-      .select("*, order_items(*), profiles(name, phone)")
-      .in("order_status", ["delivered", "refund"])
-      .gte("created_at", start)
-      .lte("created_at", end)
+      .select("*, order_items(*), addresses(*)")
       .order("created_at", { ascending: false });
 
-    // Fetch refund audit logs recorded on this operating date
-    const refundsQuery = supabase
-      .from("refunds")
-      .select("*")
-      .gte("refunded_at", start)
-      .lte("refunded_at", end);
+    if (selectedDate) {
+      const start = `${selectedDate}T00:00:00.000Z`;
+      const end = `${selectedDate}T23:59:59.999Z`;
+      query = query.gte("created_at", start).lte("created_at", end);
+    }
 
-    const [ordersRes, refundsRes] = await Promise.all([ordersQuery, refundsQuery]);
+    const { data, error } = await query;
+    let orderList = (data as any) || [];
 
-    setDeliveredOrders(ordersRes.data || []);
-    setRefundRecords(refundsRes.data || []);
+    if (error) {
+      let fallback = supabase.from("orders").select("*").order("created_at", { ascending: false });
+      if (selectedDate) {
+        fallback = fallback
+          .gte("created_at", `${selectedDate}T00:00:00.000Z`)
+          .lte("created_at", `${selectedDate}T23:59:59.999Z`);
+      }
+      const { data: fbData } = await fallback;
+      orderList = fbData || [];
+    }
+
+    // Attach Customer Profile Names & Phones
+    const userIds = [...new Set(orderList.map((o: any) => o.user_id).filter(Boolean))];
+    let profileMap: Record<string, any> = {};
+
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("id, name, phone")
+        .in("id", userIds);
+
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.id] = p;
+      });
+    }
+
+    const enriched = orderList.map((o: any) => ({
+      ...o,
+      profiles: o.user_id ? profileMap[o.user_id] || null : null,
+    }));
+
+    setOrders(enriched);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchSettlementData();
+    fetchFinancials();
   }, [selectedDate]);
 
-  // 2. Daily Financial Settlement Math & Cash Drawer Engine
-  const settlement = useMemo(() => {
-    let grossDeliveredValue = 0;
-    let totalOnlineAdvanceCollected = 0;
-    let totalExpectedCodCash = 0;
-    let totalRefundsDeducted = 0;
-    let cashRefundsPaid = 0;
-    let upiRefundsPaid = 0;
+  // 100% Automated Multi-Tier Financial & Drawer Accounting Engine
+  const accountsData = useMemo(() => {
+    let grossDelivered = 0;
+    let deliveredCount = 0;
 
-    // A. Reconcile Delivered Orders
-    deliveredOrders.forEach((o) => {
-      const bill = Number(o.total_amount || 0);
-      const advancePaid = Number(o.partial_payment_amount || (o.payment_type === "full" ? bill : 0));
-      const codDue = o.payment_type === "partial" ? Math.max(0, bill - advancePaid) : 0;
+    let onlineAdvanceCollected = 0;
+    let rawCodCollected = 0;
 
-      grossDeliveredValue += bill;
-      totalOnlineAdvanceCollected += advancePaid;
-      totalExpectedCodCash += codDue;
-    });
+    let cashRefundDeductions = 0;
+    let upiRefundDeductions = 0;
 
-    // B. Reconcile Item-Level Refunds from Audit Table
-    refundRecords.forEach((r) => {
-      const refundAmt = Number(r.amount || 0);
-      totalRefundsDeducted += refundAmt;
+    orders.forEach((o) => {
+      const isDeliveredOrRefund = o.order_status === "delivered" || o.order_status === "refund";
+      const totalBill = Number(o.total_amount || 0);
+      const refundAmt = Number(o.refund_amount || 0);
+      const isCashRefund = o.refund_method?.toLowerCase() === "cash";
+      const isUpiRefund = o.refund_method?.toLowerCase() === "upi" || o.refund_method?.toLowerCase() === "bank";
 
-      if (r.refund_method?.toLowerCase() === "cash") {
-        cashRefundsPaid += refundAmt;
-      } else {
-        upiRefundsPaid += refundAmt;
+      if (isDeliveredOrRefund) {
+        grossDelivered += totalBill;
+        deliveredCount += 1;
+
+        if (o.payment_type === "full") {
+          onlineAdvanceCollected += totalBill;
+        } else if (o.payment_type === "partial") {
+          const advance = Number(o.partial_payment_amount || 0);
+          onlineAdvanceCollected += advance;
+          rawCodCollected += Math.max(0, totalBill - advance);
+        } else {
+          // Pure COD
+          rawCodCollected += totalBill;
+        }
+      }
+
+      // Track Refund Deductions Separately for Drawer vs Bank
+      if (refundAmt > 0 || o.order_status === "refund") {
+        const actualRefund = refundAmt > 0 ? refundAmt : totalBill;
+        if (isCashRefund) {
+          cashRefundDeductions += actualRefund;
+        } else {
+          // Default to UPI/Bank refund
+          upiRefundDeductions += actualRefund;
+        }
       }
     });
 
-    // C. Physical Drawer Cash Calculation (Delivery boy COD collection minus cash handed back)
-    const expectedDrawerCash = Math.max(0, totalExpectedCodCash - cashRefundsPaid);
+    const totalRefunds = cashRefundDeductions + upiRefundDeductions;
+    const actualNetSales = Math.max(0, grossDelivered - totalRefunds);
 
-    // D. Actual Realized Net Sales
-    const actualNetSales = Math.max(0, grossDeliveredValue - totalRefundsDeducted);
+    // Physical Drawer Balance: COD Collected minus Doorstep Cash Refunded
+    const physicalCashInHand = Math.max(0, rawCodCollected - cashRefundDeductions);
 
-    // E. Online Net Settlement
-    const netOnlineSettlement = Math.max(0, totalOnlineAdvanceCollected - upiRefundsPaid);
+    // Bank Account Balance: Online Collected minus UPI Refunded
+    const netBankReceipts = Math.max(0, onlineAdvanceCollected - upiRefundDeductions);
 
     return {
-      totalDeliveredOrders: deliveredOrders.length,
-      grossDeliveredValue,
-      totalOnlineAdvanceCollected,
-      totalExpectedCodCash,
-      cashRefundsPaid,
-      upiRefundsPaid,
-      totalRefundsDeducted,
-      expectedDrawerCash,
-      netOnlineSettlement,
+      totalOrders: orders.length,
+      deliveredCount,
+      grossDelivered,
+      totalRefunds,
+      cashRefundDeductions,
+      upiRefundDeductions,
       actualNetSales,
+      rawCodCollected,
+      physicalCashInHand,
+      onlineAdvanceCollected,
+      netBankReceipts,
     };
-  }, [deliveredOrders, refundRecords]);
+  }, [orders]);
     return (
     <div className="space-y-4">
-      {/* 1. Universal Top Date Bar */}
+      {/* 1. Operating Date Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            📅 Settlement Date:
+            📅 Operating Date:
           </span>
           <input
             type="date"
@@ -212,166 +204,203 @@ export default function AdminAccountsPage() {
             Yesterday
           </button>
         </div>
-
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-medium text-slate-500">
-            Delivered Volume: <strong className="text-slate-800">{settlement.totalDeliveredOrders} Orders</strong>
-          </span>
+        <div className="text-xs text-slate-500 font-medium">
+          Filtered Records: <span className="font-bold text-slate-800">{accountsData.totalOrders}</span>
         </div>
       </div>
 
-      {/* 2. Executive Settlement KPI Grid (Universal 00 Guaranteed on Empty Days) */}
+      {/* 2. Top Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* Actual Net Sales */}
-        <div className="bg-white p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 shadow-xs">
-          <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
-            💰 Actual Net Sales
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+            Gross Delivered Sales
           </p>
-          <p className="text-2xl font-black text-emerald-700 mt-1">
-            ₹{settlement.actualNetSales.toFixed(2)}
+          <p className="text-xl font-bold text-blue-600 mt-1">
+            ₹{accountsData.grossDelivered.toFixed(2)}
           </p>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Realized Revenue</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            {accountsData.deliveredCount} Delivered Orders
+          </p>
         </div>
 
-        {/* Physical Cash In Hand */}
-        <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/20 shadow-xs">
-          <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wider">
-            💵 Expected Cash in Hand
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
+            Total Refund Deductions
           </p>
-          <p className="text-2xl font-black text-amber-700 mt-1">
-            ₹{settlement.expectedDrawerCash.toFixed(2)}
+          <p className="text-xl font-bold text-rose-600 mt-1">
+            - ₹{accountsData.totalRefunds.toFixed(2)}
           </p>
-          <p className="text-[10px] text-amber-600 mt-0.5">Delivery Boys Handover</p>
+          <p className="text-[10px] text-slate-400 mt-0.5">
+            Cash + UPI Combined
+          </p>
         </div>
 
-        {/* Online Bank Settlement */}
-        <div className="bg-white p-4 rounded-xl border border-blue-200 bg-blue-50/20 shadow-xs">
-          <p className="text-[11px] font-bold text-blue-800 uppercase tracking-wider">
-            📱 Net Online Settlement
+        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
+          <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-wide">
+            Actual Net Realized Sales
           </p>
-          <p className="text-2xl font-black text-blue-700 mt-1">
-            ₹{settlement.netOnlineSettlement.toFixed(2)}
+          <p className="text-xl font-black text-emerald-700 mt-1">
+            ₹{accountsData.actualNetSales.toFixed(2)}
           </p>
-          <p className="text-[10px] text-blue-600 mt-0.5">Bank Inflow</p>
+          <p className="text-[10px] text-emerald-600 mt-0.5">Realized Total</p>
         </div>
 
-        {/* Total Deductions / Refunds */}
-        <div className="bg-white p-4 rounded-xl border border-rose-200 bg-rose-50/20 shadow-xs">
-          <p className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">
-            🔻 Total Deductions
+        <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/40 shadow-xs">
+          <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide">
+            Physical Cash In Drawer
           </p>
-          <p className="text-2xl font-black text-rose-700 mt-1">
-            - ₹{settlement.totalRefundsDeducted.toFixed(2)}
+          <p className="text-xl font-black text-amber-700 mt-1">
+            ₹{accountsData.physicalCashInHand.toFixed(2)}
           </p>
-          <p className="text-[10px] text-rose-500 mt-0.5">
-            {refundRecords.length < 10 ? `0${refundRecords.length}` : refundRecords.length} Claims Subtracted
+          <p className="text-[10px] text-amber-600 mt-0.5">Delivery Boy Deposit</p>
+        </div>
+      </div>
+
+      {/* 3. Detailed Dual-Drawer Reconciliation Panels */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Panel A: Physical Drawer Cash Reconciliation */}
+        <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-amber-100">
+            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+              💵 Physical Cash Drawer (COD Settlement)
+            </h4>
+            <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">
+              Day-End Bag
+            </span>
+          </div>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between text-slate-600">
+              <span>Gross COD Expected from Customers:</span>
+              <span className="font-semibold text-slate-800">
+                ₹{accountsData.rawCodCollected.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-rose-600">
+              <span>Doorstep Cash Refunds Handed Over:</span>
+              <span className="font-semibold">
+                - ₹{accountsData.cashRefundDeductions.toFixed(2)}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-dashed border-amber-200 flex justify-between items-center bg-amber-50/70 p-2 rounded-lg font-bold">
+              <span className="text-amber-900">Exact Cash To Collect From Delivery Boy:</span>
+              <span className="text-base text-amber-700 font-mono">
+                ₹{accountsData.physicalCashInHand.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            * UPI refunds do not touch this drawer balance as the cash remained in customer's hand.
+          </p>
+        </div>
+
+        {/* Panel B: Online Bank Settlements */}
+        <div className="bg-white rounded-xl border border-purple-200 p-4 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-purple-100">
+            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
+              🏦 Direct Bank & QR Settlements
+            </h4>
+            <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+              0% Gateway Fee
+            </span>
+          </div>
+          <div className="space-y-2 text-xs">
+            <div className="flex justify-between text-slate-600">
+              <span>Advance / Full Online QR Payments:</span>
+              <span className="font-semibold text-slate-800">
+                ₹{accountsData.onlineAdvanceCollected.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-rose-600">
+              <span>UPI / Bank Direct Refunds Paid:</span>
+              <span className="font-semibold">
+                - ₹{accountsData.upiRefundDeductions.toFixed(2)}
+              </span>
+            </div>
+            <div className="pt-2 border-t border-dashed border-purple-200 flex justify-between items-center bg-purple-50/70 p-2 rounded-lg font-bold">
+              <span className="text-purple-900">Net Realized In Bank Account:</span>
+              <span className="text-base text-purple-700 font-mono">
+                ₹{accountsData.netBankReceipts.toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-400">
+            * Matches your direct bank/UPI statement minus initiated customer payouts.
           </p>
         </div>
       </div>
 
-      {/* 3. Cash Drawer Settlement Card */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-3">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-          <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-            📥 Cash Drawer Verification Breakdown
-          </h3>
-          <span className="text-[11px] text-slate-400">Desk reconciliation</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-          <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-            <span className="text-slate-500">Gross COD Collected:</span>
-            <p className="text-base font-bold text-slate-800 mt-0.5">
-              ₹{settlement.totalExpectedCodCash.toFixed(2)}
-            </p>
-            <p className="text-[10px] text-slate-400">Total COD collected by drivers</p>
-          </div>
-
-          <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
-            <span className="text-slate-500">Cash Handed to Customers (Refund):</span>
-            <p className="text-base font-bold text-rose-600 mt-0.5">
-              - ₹{settlement.cashRefundsPaid.toFixed(2)}
-            </p>
-            <p className="text-[10px] text-slate-400">Cash returned on doorstep</p>
-          </div>
-
-          <div className="bg-amber-50 p-3 rounded-lg border border-amber-200">
-            <span className="font-semibold text-amber-800">Must Collect in Drawer:</span>
-            <p className="text-base font-black text-amber-900 mt-0.5">
-              ₹{settlement.expectedDrawerCash.toFixed(2)}
-            </p>
-            <p className="text-[10px] text-amber-700">Actual cash to count right now</p>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Delivered Orders Reconciliation Ledger */}
+      {/* 4. Financial Audit Register */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-            📋 Delivered Orders Audit Trail ({deliveredOrders.length})
-          </h3>
-          <span className="text-[11px] text-slate-400">Date: {selectedDate}</span>
+        <div className="p-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+            Daily Financial Breakdown ({orders.length} Orders)
+          </h4>
         </div>
 
         {loading ? (
-          <div className="p-8 text-center text-slate-500">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-            <p className="text-xs">Calculating daily accounts...</p>
+          <div className="p-8 text-center text-slate-500 text-xs">
+            Loading accounts ledger...
           </div>
-        ) : deliveredOrders.length === 0 ? (
-          <div className="p-10 text-center text-slate-400 text-xs">
-            There are 00 delivered records to settle on {selectedDate}.
+        ) : orders.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs">
+            No transactions found for {selectedDate}.
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-700">
-              <thead className="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="p-3">Order #</th>
-                  <th className="p-3">Customer</th>
-                  <th className="p-3">Type</th>
-                  <th className="p-3 text-right">Total Bill</th>
-                  <th className="p-3 text-right">Advance Paid</th>
-                  <th className="p-3 text-right">COD Due</th>
-                  <th className="p-3 text-right">Refunds</th>
-                  <th className="p-3 text-right">Net Realized</th>
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100/75 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
+                  <th className="p-2.5">Order</th>
+                  <th className="p-2.5">Customer</th>
+                  <th className="p-2.5">Type</th>
+                  <th className="p-2.5 text-right">Gross Bill</th>
+                  <th className="p-2.5 text-right">Refund / Deduction</th>
+                  <th className="p-2.5 text-right">Net Realized</th>
+                  <th className="p-2.5 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {deliveredOrders.map((o) => {
-                  const bill = Number(o.total_amount || 0);
-                  const advancePaid = Number(
-                    o.partial_payment_amount || (o.payment_type === "full" ? bill : 0)
-                  );
-                  const codDue = o.payment_type === "partial" ? Math.max(0, bill - advancePaid) : 0;
-                  const refundDeduction = Number(o.refund_amount || 0);
-                  const netRealized = Math.max(0, bill - refundDeduction);
+                {orders.map((o) => {
+                  const gross = Number(o.total_amount || 0);
+                  const refundVal = Number(o.refund_amount || 0);
+                  const net = Math.max(0, gross - refundVal);
+                  const isRefund = o.order_status === "refund" || refundVal > 0;
 
                   return (
-                    <tr key={o.id} className="hover:bg-slate-50/50 transition">
-                      <td className="p-3 font-bold text-slate-900">#{o.order_number}</td>
-                      <td className="p-3">
-                        <p className="font-semibold text-slate-800">
-                          {o.profiles?.name || o.customer_name || "Customer"}
-                        </p>
-                        <p className="text-[10px] text-slate-400">
-                          {o.profiles?.phone || o.customer_phone || ""}
-                        </p>
+                    <tr key={o.id} className="hover:bg-slate-50/80 transition">
+                      <td className="p-2.5 font-bold text-slate-900">
+                        #{o.order_number}
                       </td>
-                      <td className="p-3">
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-700 uppercase">
-                          {o.payment_type}
+                      <td className="p-2.5 text-slate-700">
+                        <p className="font-semibold">{o.profiles?.name || o.customer_name || "Customer"}</p>
+                        <p className="text-[10px] text-slate-400">{o.profiles?.phone || o.customer_phone || ""}</p>
+                      </td>
+                      <td className="p-2.5">
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
+                          {o.payment_type === "full" ? "Full Paid" : "Advance + COD"}
                         </span>
                       </td>
-                      <td className="p-3 text-right font-bold text-slate-900">₹{bill.toFixed(2)}</td>
-                      <td className="p-3 text-right text-blue-600 font-medium">₹{advancePaid.toFixed(2)}</td>
-                      <td className="p-3 text-right text-amber-700 font-semibold">₹{codDue.toFixed(2)}</td>
-                      <td className="p-3 text-right text-rose-600 font-bold">
-                        {refundDeduction > 0 ? `- ₹${refundDeduction.toFixed(2)}` : "—"}
+                      <td className="p-2.5 text-right font-semibold text-slate-800">
+                        ₹{gross.toFixed(2)}
                       </td>
-                      <td className="p-3 text-right font-black text-emerald-700">
-                        ₹{netRealized.toFixed(2)}
+                      <td className="p-2.5 text-right font-semibold text-rose-600">
+                        {isRefund ? `- ₹${refundVal.toFixed(2)} (${o.refund_method?.toUpperCase() || "UPI"})` : "—"}
+                      </td>
+                      <td className="p-2.5 text-right font-bold text-emerald-700 font-mono">
+                        ₹{net.toFixed(2)}
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                            o.order_status === "delivered"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : o.order_status === "refund"
+                              ? "bg-rose-100 text-rose-800"
+                              : "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {o.order_status}
+                        </span>
                       </td>
                     </tr>
                   );
@@ -384,4 +413,3 @@ export default function AdminAccountsPage() {
     </div>
   );
             }
-
