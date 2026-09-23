@@ -1,89 +1,30 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
 type Order = any;
 
-const STATUSES = [
-  { value: "current", label: "Current Order", color: "bg-blue-100 text-blue-800 border-blue-200" },
-  { value: "out_for_delivery", label: "Out for Delivery", color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
-  { value: "delivered", label: "Delivered", color: "bg-emerald-100 text-emerald-800 border-emerald-200" },
-  { value: "refund", label: "Refund", color: "bg-rose-100 text-rose-800 border-rose-200" },
-  { value: "pending", label: "Pending Order", color: "bg-amber-100 text-amber-800 border-amber-200" },
-  { value: "spam", label: "Spam", color: "bg-red-100 text-red-800 border-red-200" },
+interface OrdersTableProps {
+  orders: Order[];
+  selected: string[];
+  onToggleSelect: (id: string) => void;
+  onToggleSelectAll: () => void;
+  onStatusChange: (order: Order, newStatus: string) => void;
+  onMarkRefundDone: (order: Order) => void;
+  onDelete: (order: Order) => void;
+  onView: (order: Order) => void;
+  onDownload: (order: Order) => void;
+  canPrintLabel: (order: Order) => boolean;
+  generatingLabel: boolean;
+}
+
+const STATUS_OPTIONS = [
+  { value: "current", label: "Current Order" },
+  { value: "out_for_delivery", label: "Out for Delivery" },
+  { value: "delivered", label: "Delivered" },
+  { value: "refund", label: "Refund" },
+  { value: "pending", label: "Pending Order" },
+  { value: "spam", label: "Spam" },
 ];
-
-function getAllowedNextStatuses(currentStatus: string) {
-  switch (currentStatus) {
-    case "pending":
-      return [
-        { value: "pending", label: "Pending Order" },
-        { value: "current", label: "Move to Current Order" },
-        { value: "spam", label: "Mark as Spam" },
-      ];
-    case "current":
-      return [
-        { value: "current", label: "Current Order" },
-        { value: "out_for_delivery", label: "Send to Out for Delivery" },
-      ];
-    case "out_for_delivery":
-      return [
-        { value: "out_for_delivery", label: "Out for Delivery" },
-        { value: "delivered", label: "Mark as Delivered" },
-      ];
-    case "delivered":
-      return [
-        { value: "delivered", label: "Delivered" },
-        { value: "spam", label: "Mark as Spam" },
-      ];
-    case "refund":
-      return [
-        { value: "refund", label: "Refund" },
-        { value: "spam", label: "Mark as Spam" },
-      ];
-    case "spam":
-      return [{ value: "spam", label: "Spam" }];
-    default:
-      return [{ value: currentStatus, label: currentStatus }];
-  }
-}
-
-function resolveImageUrl(item: any): string | null {
-  const p = item?.products || item?.product || {};
-  const raw =
-    p.images ??
-    p.image ??
-    p.image_url ??
-    item?.images ??
-    item?.image ??
-    item?.image_url ??
-    p.thumbnail ??
-    p.photo ??
-    null;
-
-  if (!raw) return null;
-
-  let target: any = raw;
-  if (Array.isArray(target) && target.length > 0) target = target[0];
-
-  if (typeof target === "string") {
-    const trimmed = target.trim();
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed) && parsed.length > 0) target = parsed[0];
-      } catch {
-        target = trimmed.replace(/[\[\]"']/g, "");
-      }
-    }
-  }
-
-  if (typeof target !== "string" || !target.trim()) return null;
-  target = target.trim();
-
-  if (target.startsWith("http://") || target.startsWith("https://")) return target;
-
-  const cleanPath = target.replace(/^\/+/, "").replace(/^products\//, "");
-  return `https://uewgqsfptqbkytfyozqi.supabase.co/storage/v1/object/public/products/${cleanPath}`;
-}
 
 function resolveItemName(item: any): string {
   const p = item?.products || item?.product || {};
@@ -112,133 +53,84 @@ export default function OrdersTable({
   onDownload,
   canPrintLabel,
   generatingLabel,
-}: {
-  orders: Order[];
-  selected: string[];
-  onToggleSelect: (id: string) => void;
-  onToggleSelectAll: () => void;
-  onStatusChange: (order: Order, status: string) => void;
-  onMarkRefundDone: (order: Order) => void;
-  onDelete: (order: Order) => void;
-  onView: (order: Order) => void;
-  onDownload: (order: Order) => void;
-  canPrintLabel: (order: Order) => boolean;
-  generatingLabel: boolean;
-}) {
-  const getStatusInfo = (status: string) =>
-    STATUSES.find((s) => s.value === status) || {
-      value: status,
-      label: status,
-      color: "bg-slate-100 text-slate-700 border-slate-200",
-    };
+}: OrdersTableProps) {
+  const allSelected = orders.length > 0 && selected.length === orders.length;
 
   return (
     <div className="space-y-3">
-      {/* Select All Bar */}
-      <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between border border-slate-200 shadow-xs">
-        <div className="flex items-center gap-3">
+      {/* Bulk Select Header */}
+      <div className="bg-white px-4 py-2.5 rounded-xl border border-slate-200 flex items-center justify-between text-xs text-slate-600 shadow-xs">
+        <label className="flex items-center gap-2 cursor-pointer font-semibold">
           <input
             type="checkbox"
-            checked={selected.length === orders.length && orders.length > 0}
+            checked={allSelected}
             onChange={onToggleSelectAll}
-            className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+            className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
           />
-          <span className="text-xs text-slate-700 font-semibold">
-            Select All ({orders.length} Orders)
-          </span>
-        </div>
-        <span className="text-[11px] text-slate-400 font-medium">
-          Automated Pipeline
-        </span>
+          <span>Select All ({orders.length} Orders)</span>
+        </label>
+        <span className="text-[11px] text-slate-400 font-medium">Automated Pipeline</span>
       </div>
 
       {/* Orders List */}
-      <div className="space-y-3">
-        {orders.map((o) => {
-          const statusInfo = getStatusInfo(o.order_status);
-          const isSelected = selected.includes(o.id);
-          const canPrint = canPrintLabel(o);
-          const allowedTransitions = getAllowedNextStatuses(o.order_status);
+      {orders.map((o) => {
+        const isSelected = selected.includes(o.id);
+        const profile = o.profiles;
+        const total = Number(o.total_amount || 0);
+        const refundAmt = Number(o.refund_amount || 0);
+        const isRefundOrder = o.order_status === "refund";
+        const isSettled = o.refund_status === "success";
+        const netRealized = Math.max(0, total - (refundAmt > 0 ? refundAmt : (isRefundOrder ? total : 0)));
 
-          // Automated Financial Math per Order Card
-          const grossBill = Number(o.total_amount || 0);
-          const refundAmount = Number(o.refund_amount || 0);
-          const netRealized = Math.max(0, grossBill - refundAmount);
-          const isRefund = o.order_status === "refund" || refundAmount > 0;
-          const isRefundSettled =
-            isRefund &&
-            (o.refund_status === "success" ||
-              Boolean(o.transaction_ref) ||
-              o.payment_status === "refunded");
+        const rawItems = Array.isArray(o.order_items)
+          ? o.order_items
+          : Array.isArray(o.items)
+          ? o.items
+          : [];
 
-          const baseCod = grossBill - Number(o.partial_payment_amount || 0);
-          const cashRefundDeduction =
-            o.refund_method?.toLowerCase() === "cash" ? refundAmount : 0;
-          const finalCodDue = Math.max(0, baseCod - cashRefundDeduction);
-
-          let orderItems: any[] = [];
-          if (Array.isArray(o.order_items)) {
-            orderItems = o.order_items;
-          } else if (Array.isArray(o.items)) {
-            orderItems = o.items;
-          } else if (typeof o.items === "string") {
-            try {
-              orderItems = JSON.parse(o.items);
-            } catch {
-              orderItems = [];
-            }
-          }
-
-          const address = o.addresses || o.address || {};
-          const customerUpi =
-            o.customer_upi || o.upi_id || o.profiles?.upi_id || null;
-
-          return (
-            <div
-              key={o.id}
-              className={`bg-white rounded-xl border p-4 transition shadow-xs ${
-                isSelected
-                  ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500"
-                  : "border-slate-200"
-              }`}
-            >
-              {/* Header */}
-              <div className="flex items-start gap-3 mb-3">
+        return (
+          <div
+            key={o.id}
+            className={`bg-white rounded-xl border transition shadow-xs ${
+              isSelected ? "border-blue-500 ring-1 ring-blue-500" : "border-slate-200"
+            }`}
+          >
+            {/* 1. Card Header: Upore sudhu REFUND label thakbe, Settled thakbe na */}
+            <div className="p-4 border-b border-slate-100 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
                 <input
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => onToggleSelect(o.id)}
-                  className="mt-1 w-4 h-4 accent-blue-600 rounded cursor-pointer flex-shrink-0"
+                  className="w-4 h-4 mt-1 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
                 />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <button
-                      onClick={() => onView(o)}
-                      className="font-bold text-slate-900 text-sm hover:text-blue-600 text-left transition"
-                    >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">
                       #{o.order_number}
-                    </button>
+                    </span>
 
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <span
-                        className={`text-[11px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wide border ${statusInfo.color}`}
-                      >
-                        {statusInfo.label}
-                      </span>
-                      {isRefund && (
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
-                            isRefundSettled
-                              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                              : "bg-amber-50 text-amber-700 border-amber-300 animate-pulse"
-                          }`}
-                        >
-                          {isRefundSettled ? "✓ Settled" : "⏳ Action Pending"}
-                        </span>
-                      )}
-                    </div>
+                    {/* Status Badge */}
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border ${
+                        isRefundOrder
+                          ? "bg-rose-50 text-rose-700 border-rose-200"
+                          : o.order_status === "delivered"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : o.order_status === "current"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
+                          : o.order_status === "out_for_delivery"
+                          ? "bg-purple-50 text-purple-700 border-purple-200"
+                          : o.order_status === "spam"
+                          ? "bg-red-50 text-red-700 border-red-200"
+                          : "bg-amber-50 text-amber-700 border-amber-200"
+                      }`}
+                    >
+                      {o.order_status.replace(/_/g, " ")}
+                    </span>
                   </div>
-                  <p className="text-[11px] text-slate-400">
+
+                  <p className="text-[11px] text-slate-400 mt-0.5">
                     {new Date(o.created_at).toLocaleString("en-IN", {
                       day: "2-digit",
                       month: "short",
@@ -250,225 +142,166 @@ export default function OrdersTable({
                 </div>
               </div>
 
-              {/* Customer Info Card */}
-              <div className="bg-slate-50 rounded-lg p-3 mb-3 border border-slate-100">
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-sm">👤</span>
-                    <p className="text-xs font-bold text-slate-800 truncate">
-                      {o.profiles?.name || o.customer_name || "Customer Record"}
-                    </p>
-                  </div>
-                  {o.profiles?.phone || o.customer_phone ? (
-                    <a
-                      href={`tel:${o.profiles?.phone || o.customer_phone}`}
-                      className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"
-                    >
-                      <span>📱</span>
-                      <span>{o.profiles?.phone || o.customer_phone}</span>
-                    </a>
-                  ) : (
-                    <p className="text-xs text-slate-400">No phone attached</p>
-                  )}
-                </div>
+              {/* Customer record */}
+              <div className="text-right text-xs">
+                <p className="font-semibold text-slate-700 flex items-center justify-end gap-1">
+                  <span>👤</span>
+                  <span>{profile?.name || "Customer Record"}</span>
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {profile?.phone || profile?.email || "No phone attached"}
+                </p>
+              </div>
+            </div>
 
-                {customerUpi && (
-                  <p className="text-[11px] text-blue-700 font-mono font-semibold mt-1">
-                    UPI: {customerUpi}
-                  </p>
-                )}
+            {/* 2. Packaged Items */}
+            <div className="p-4 border-b border-slate-100 bg-slate-50/40">
+              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-2">
+                Packaged Items ({rawItems.length})
+              </p>
+              <div className="space-y-2">
+                {rawItems.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">No items listed</p>
+                ) : (
+                  rawItems.map((item: any, idx: number) => {
+                    const itemName = resolveItemName(item);
+                    const qty = Number(item.quantity || item.qty || item.count || 1);
+                    const price = Number(item.price || item.unit_price || 0);
+                    const weight = Number(item?.products?.weight || item.weight || 0);
 
-                {o.delivery_type !== "self_pickup" && (
-                  <div className="mt-2 pt-2 border-t border-slate-200/60 text-xs text-slate-600">
-                    <p className="font-semibold text-slate-700">📍 Delivery Address:</p>
-                    <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed font-mono">
-                      {address.full_address ||
-                        address.address_line ||
-                        [address.street, address.city, address.pincode]
-                          .filter(Boolean)
-                          .join(", ") ||
-                        "Address saved in record"}
-                    </p>
-                  </div>
+                    return (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between text-xs bg-white p-2 rounded-lg border border-slate-100"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-base">📦</span>
+                          <div>
+                            <p className="font-semibold text-slate-800">{itemName}</p>
+                            <p className="text-[11px] text-slate-500">
+                              ₹{price} × {qty}
+                              {weight > 0 && (
+                                <span className="ml-1 text-emerald-700 font-medium">
+                                  ({(weight * qty).toFixed(2)} Kg)
+                                </span>
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="font-bold text-slate-800">₹{(price * qty).toFixed(2)}</p>
+                      </div>
+                    );
+                  })
                 )}
               </div>
-                              {/* Packaged Items */}
-              {orderItems.length > 0 && (
-                <div className="bg-white rounded-lg border border-slate-200 p-3 mb-3 space-y-2">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    Packaged Items ({orderItems.length})
-                  </p>
-                  <div className="space-y-2">
-                    {orderItems.map((item: any, idx: number) => {
-                      const itemName = resolveItemName(item);
-                      const itemImg = resolveImageUrl(item);
-                      const qty = Number(item.quantity || item.qty || item.count || 1);
-                      const price = Number(item.price || item.unit_price || 0);
-                      const subtotal = (price * qty).toFixed(2);
+            </div>
 
-                      const p = item?.products || item?.product || {};
-                      const unitWeight = Number(p.weight || item.weight || 0);
-                      const totalWeight = unitWeight * qty;
+            {/* 3. Financial Breakdown */}
+            <div className="p-4 border-b border-slate-100 space-y-1 text-xs">
+              <div className="flex justify-between text-slate-600">
+                <span>Gross Bill:</span>
+                <span className="font-bold text-slate-800">₹{total.toFixed(2)}</span>
+              </div>
 
-                      return (
-                        <div
-                          key={item.id || idx}
-                          className="flex items-center justify-between gap-2 text-xs py-1 border-b border-slate-100 last:border-b-0"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {itemImg ? (
-                              <img
-                                src={itemImg}
-                                alt={itemName}
-                                className="w-9 h-9 object-cover rounded-md border border-slate-200 bg-white flex-shrink-0"
-                                onError={(e) => {
-                                  (e.target as HTMLElement).style.display = "none";
-                                }}
-                              />
-                            ) : (
-                              <div className="w-9 h-9 bg-slate-100 rounded-md flex items-center justify-center text-sm flex-shrink-0">
-                                🛍️
-                              </div>
-                            )}
-
-                            <div className="min-w-0">
-                              <p className="font-semibold text-slate-800 text-xs truncate">
-                                {itemName}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                                <span>₹{price} × {qty}</span>
-                                {totalWeight > 0 && (
-                                  <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">
-                                    {totalWeight.toFixed(2)} Kg
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          <span className="font-bold text-slate-800 flex-shrink-0 text-xs">
-                            ₹{subtotal}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+              {(refundAmt > 0 || isRefundOrder) && (
+                <div className="flex justify-between text-rose-600 font-semibold">
+                  <span>
+                    Deducted Refund {o.refund_method ? `(${String(o.refund_method).toUpperCase()})` : ""}:
+                  </span>
+                  <span>- ₹{(refundAmt > 0 ? refundAmt : total).toFixed(2)}</span>
                 </div>
               )}
 
-              {/* Automated Net Realized Financial Card */}
-              <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 mb-3 text-xs space-y-1">
-                <div className="flex justify-between font-semibold">
-                  <span className="text-slate-600">Gross Bill</span>
-                  <span className="text-slate-900 font-bold">₹{grossBill.toFixed(2)}</span>
-                </div>
-
-                {o.payment_type === "partial" && (
-                  <div className="flex justify-between text-[11px] text-slate-500 pt-0.5">
-                    <span>Advance Paid: ₹{o.partial_payment_amount}</span>
-                    <span className="font-semibold text-amber-700">
-                      COD Target: ₹{finalCodDue.toFixed(2)}
-                      {cashRefundDeduction > 0 && " (Cash Deducted)"}
-                    </span>
-                  </div>
-                )}
-
-                {isRefund && (
-                  <div className="flex justify-between pt-1 border-t border-rose-200 text-rose-700 font-bold">
-                    <span>
-                      Deducted Refund ({o.refund_method?.toUpperCase() || "UPI"}):
-                    </span>
-                    <span>- ₹{refundAmount.toFixed(2)}</span>
-                  </div>
-                )}
-
-                <div className="flex justify-between pt-1 border-t border-slate-200 text-emerald-800 font-bold bg-emerald-50/60 p-1 rounded">
-                  <span>Actual Net Realized:</span>
-                  <span className="font-mono text-sm">₹{netRealized.toFixed(2)}</span>
-                </div>
+              <div className="flex justify-between text-emerald-700 font-bold pt-1 border-t border-slate-100 text-sm">
+                <span>Actual Net Realized:</span>
+                <span>₹{netRealized.toFixed(2)}</span>
               </div>
 
-              {/* Badges */}
-              <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[11px]">
-                <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-medium">
-                  {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home Delivery"}
+              {/* Delivery and payment badges */}
+              <div className="flex flex-wrap gap-1.5 pt-2">
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                  🚶 {o.delivery_type === "home_delivery" ? "Home Delivery" : "Pickup"}
                 </span>
-                <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded font-medium">
-                  {o.payment_type === "full" ? "Full Payment" : "Advance Paid"}
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                  💳 {o.payment_type === "partial" ? "Advance Payment" : "Full Payment"}
                 </span>
-                <span
-                  className={`px-2 py-0.5 rounded font-semibold ${
-                    o.payment_status === "success"
-                      ? "bg-emerald-50 text-emerald-700"
-                      : o.payment_status === "pending"
-                      ? "bg-amber-50 text-amber-700"
-                      : "bg-rose-50 text-rose-700"
-                  }`}
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                  Status: {o.payment_status || "unpaid"}
+                </span>
+              </div>
+            </div>
+
+            {/* 4. Card Footer: Niche action buttons (Settled / Payment Done) */}
+            <div className="p-3 bg-slate-50/60 rounded-b-xl flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2">
+                <select
+                  value={o.order_status}
+                  onChange={(e) => onStatusChange(o, e.target.value)}
+                  className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 bg-white text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
                 >
-                  Payment: {o.payment_status}
-                </span>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Refund Final Settlement Action Button */}
+                {isRefundOrder && (
+                  <>
+                    {isSettled ? (
+                      <span className="px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 shadow-2xs">
+                        ✓ Settled
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onMarkRefundDone(o)}
+                        className="px-3 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-xs flex items-center gap-1.5 transition active:scale-95"
+                      >
+                        <span>💳</span>
+                        <span>Payment Done</span>
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
 
-              {/* Action Controls */}
-              <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                {o.order_status !== "spam" && (
-                  <select
-                    value={o.order_status}
-                    onChange={(e) => onStatusChange(o, e.target.value)}
-                    className="flex-1 text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 font-semibold bg-white outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    {allowedTransitions.map((s) => (
-                      <option key={s.value} value={s.value}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                )}
+              {/* View, Label and Delete Controls */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onView(o)}
+                  className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 transition shadow-2xs"
+                >
+                  👁️ Details
+                </button>
 
-                {/* Delivered Order -> Initiate Refund */}
-                {o.order_status === "delivered" && (
-                  <button
-                    onClick={() => onStatusChange(o, "refund")}
-                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 flex-shrink-0"
-                  >
-                    🔄 Initiate Refund
-                  </button>
-                )}
-
-                {/* Refund Order -> Mark Payment Done Button */}
-                {o.order_status === "refund" && !isRefundSettled && (
-                  <button
-                    onClick={() => onMarkRefundDone(o)}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5 shadow-xs flex-shrink-0"
-                  >
-                    💳 Mark Payment Done
-                  </button>
-                )}
-
-                {canPrint && (
-                  <button
-                    onClick={() => onDownload(o)}
-                    disabled={generatingLabel}
-                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs flex-shrink-0"
-                  >
-                    📥 Label
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => onDownload(o)}
+                  disabled={generatingLabel || !canPrintLabel(o)}
+                  className="px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1 disabled:opacity-50 transition shadow-2xs"
+                >
+                  <span>🏷️</span>
+                  <span>Label</span>
+                </button>
 
                 {o.order_status === "spam" && (
                   <button
+                    type="button"
                     onClick={() => onDelete(o)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition flex items-center gap-1 flex-shrink-0"
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition"
                   >
-                    🗑️ Delete Order (Keep Profile)
+                    🗑️
                   </button>
                 )}
               </div>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
-                }
+                  }
                 
