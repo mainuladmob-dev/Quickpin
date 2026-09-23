@@ -2,7 +2,6 @@
 
 type Order = any;
 
-// 1. Sothik Sequence onujayi Status List
 const STATUSES = [
   { value: "current", label: "Current Order", color: "bg-blue-100 text-blue-800 border-blue-200" },
   { value: "out_for_delivery", label: "Out for Delivery", color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
@@ -12,36 +11,30 @@ const STATUSES = [
   { value: "spam", label: "Spam", color: "bg-red-100 text-red-800 border-red-200" },
 ];
 
-// 2. Strict State Transition Engine (Spam Guard Rules)
 function getAllowedNextStatuses(currentStatus: string) {
   switch (currentStatus) {
     case "pending":
-      // Pending -> Current Order ba Spam (Allowed)
       return [
         { value: "pending", label: "Pending Order" },
         { value: "current", label: "Move to Current Order" },
         { value: "spam", label: "Mark as Spam" },
       ];
     case "current":
-      // Current -> Shudhu Out for Delivery (Spam strictly blocked)
       return [
         { value: "current", label: "Current Order" },
         { value: "out_for_delivery", label: "Send to Out for Delivery" },
       ];
     case "out_for_delivery":
-      // Out for Delivery -> Shudhu Delivered (Spam strictly blocked)
       return [
         { value: "out_for_delivery", label: "Out for Delivery" },
         { value: "delivered", label: "Mark as Delivered" },
       ];
     case "delivered":
-      // Delivered -> Delivered ba Spam (Allowed jodi customer cheat kore)
       return [
         { value: "delivered", label: "Delivered" },
         { value: "spam", label: "Mark as Spam" },
       ];
     case "refund":
-      // Refund -> Refund ba Spam (Allowed)
       return [
         { value: "refund", label: "Refund" },
         { value: "spam", label: "Mark as Spam" },
@@ -53,7 +46,6 @@ function getAllowedNextStatuses(currentStatus: string) {
   }
 }
 
-// Helper: Smart Image URL Resolver
 function resolveImageUrl(item: any): string | null {
   const p = item?.products || item?.product || {};
   const raw =
@@ -93,7 +85,6 @@ function resolveImageUrl(item: any): string | null {
   return `https://uewgqsfptqbkytfyozqi.supabase.co/storage/v1/object/public/products/${cleanPath}`;
 }
 
-// Helper: 100% English Item Name Resolver
 function resolveItemName(item: any): string {
   const p = item?.products || item?.product || {};
   return (
@@ -105,7 +96,6 @@ function resolveItemName(item: any): string {
     p.title ||
     item.title ||
     p.name_bn ||
-    item.name_bn ||
     "Product Item"
   );
 }
@@ -156,7 +146,7 @@ export default function OrdersTable({
           </span>
         </div>
         <span className="text-[11px] text-slate-400 font-medium">
-          Date Filtered Records
+          Automated Pipeline
         </span>
       </div>
 
@@ -166,12 +156,23 @@ export default function OrdersTable({
           const statusInfo = getStatusInfo(o.order_status);
           const isSelected = selected.includes(o.id);
           const canPrint = canPrintLabel(o);
-          const codAmount = (o.total_amount || 0) - (o.partial_payment_amount || 0);
           const allowedTransitions = getAllowedNextStatuses(o.order_status);
 
-          // Refund Sub-status calculation (Pending vs Success)
-          const isRefund = o.order_status === "refund";
-          const isRefundSuccess = isRefund && (Boolean(o.transaction_ref) || o.refund_status === "success" || o.payment_status === "refunded");
+          // Automated Financial Math per Order Card
+          const grossBill = Number(o.total_amount || 0);
+          const refundAmount = Number(o.refund_amount || 0);
+          const netRealized = Math.max(0, grossBill - refundAmount);
+          const isRefund = o.order_status === "refund" || refundAmount > 0;
+          const isRefundSuccess =
+            isRefund &&
+            (Boolean(o.transaction_ref) ||
+              o.refund_status === "success" ||
+              o.payment_status === "refunded");
+
+          const baseCod = grossBill - Number(o.partial_payment_amount || 0);
+          const cashRefundDeduction =
+            o.refund_method?.toLowerCase() === "cash" ? refundAmount : 0;
+          const finalCodDue = Math.max(0, baseCod - cashRefundDeduction);
 
           let orderItems: any[] = [];
           if (Array.isArray(o.order_items)) {
@@ -187,15 +188,19 @@ export default function OrdersTable({
           }
 
           const address = o.addresses || o.address || {};
+          const customerUpi =
+            o.customer_upi || o.upi_id || o.profiles?.upi_id || null;
 
           return (
             <div
               key={o.id}
               className={`bg-white rounded-xl border p-4 transition shadow-xs ${
-                isSelected ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500" : "border-slate-200"
+                isSelected
+                  ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500"
+                  : "border-slate-200"
               }`}
             >
-              {/* Header Row */}
+              {/* Header */}
               <div className="flex items-start gap-3 mb-3">
                 <input
                   type="checkbox"
@@ -213,14 +218,11 @@ export default function OrdersTable({
                     </button>
 
                     <div className="flex items-center gap-1.5 flex-shrink-0">
-                      {/* Main Status Badge */}
                       <span
                         className={`text-[11px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wide border ${statusInfo.color}`}
                       >
                         {statusInfo.label}
                       </span>
-
-                      {/* Refund Sub-Status Badge (Pending vs Success) */}
                       {isRefund && (
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
@@ -246,7 +248,7 @@ export default function OrdersTable({
                 </div>
               </div>
 
-              {/* Customer Info & Address Card (Permanent Fraud Tracking Data) */}
+              {/* Customer Info Card */}
               <div className="bg-slate-50 rounded-lg p-3 mb-3 border border-slate-100">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2 min-w-0">
@@ -268,6 +270,12 @@ export default function OrdersTable({
                   )}
                 </div>
 
+                {customerUpi && (
+                  <p className="text-[11px] text-blue-700 font-mono font-semibold mt-1">
+                    UPI: {customerUpi}
+                  </p>
+                )}
+
                 {o.delivery_type !== "self_pickup" && (
                   <div className="mt-2 pt-2 border-t border-slate-200/60 text-xs text-slate-600">
                     <p className="font-semibold text-slate-700">📍 Delivery Address:</p>
@@ -282,7 +290,7 @@ export default function OrdersTable({
                   </div>
                 )}
               </div>
-              {/* Ordered Items with Weight (Kg) Breakdown */}
+                      {/* Packaged Items */}
               {orderItems.length > 0 && (
                 <div className="bg-white rounded-lg border border-slate-200 p-3 mb-3 space-y-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -346,27 +354,39 @@ export default function OrdersTable({
                 </div>
               )}
 
-              {/* Amount Breakdown */}
-              <div className="bg-slate-50 rounded-lg border border-slate-100 p-2.5 mb-3 text-xs">
+              {/* Automated Net Realized Financial Card */}
+              <div className="bg-slate-50 rounded-lg border border-slate-200 p-2.5 mb-3 text-xs space-y-1">
                 <div className="flex justify-between font-semibold">
-                  <span className="text-slate-600">Total Bill</span>
-                  <span className="text-slate-900 font-bold">₹{o.total_amount}</span>
+                  <span className="text-slate-600">Gross Bill</span>
+                  <span className="text-slate-900 font-bold">₹{grossBill.toFixed(2)}</span>
                 </div>
+
                 {o.payment_type === "partial" && (
-                  <div className="flex justify-between pt-1 border-t border-slate-200/50 mt-1">
-                    <span className="text-emerald-700">Advance Paid: ₹{o.partial_payment_amount}</span>
-                    <span className="text-amber-700 font-bold">COD Due: ₹{codAmount.toFixed(2)}</span>
+                  <div className="flex justify-between text-[11px] text-slate-500 pt-0.5">
+                    <span>Advance Paid: ₹{o.partial_payment_amount}</span>
+                    <span className="font-semibold text-amber-700">
+                      COD Target: ₹{finalCodDue.toFixed(2)}
+                      {cashRefundDeduction > 0 && " (Cash Deducted)"}
+                    </span>
                   </div>
                 )}
+
                 {isRefund && (
-                  <div className="flex justify-between pt-1 border-t border-rose-200 mt-1 text-rose-700 font-semibold">
-                    <span>Refunded Amount:</span>
-                    <span>- ₹{o.refund_amount || 0} ({o.refund_method || "UPI"})</span>
+                  <div className="flex justify-between pt-1 border-t border-rose-200 text-rose-700 font-bold">
+                    <span>
+                      Deducted Refund ({o.refund_method?.toUpperCase() || "UPI"}):
+                    </span>
+                    <span>- ₹{refundAmount.toFixed(2)}</span>
                   </div>
                 )}
+
+                <div className="flex justify-between pt-1 border-t border-slate-200 text-emerald-800 font-bold bg-emerald-50/60 p-1 rounded">
+                  <span>Actual Net Realized:</span>
+                  <span className="font-mono text-sm">₹{netRealized.toFixed(2)}</span>
+                </div>
               </div>
 
-              {/* Badges Row */}
+              {/* Badges */}
               <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[11px]">
                 <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-medium">
                   {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home Delivery"}
@@ -389,7 +409,6 @@ export default function OrdersTable({
 
               {/* Action Controls */}
               <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                {/* Safe Transition Selector (Spam-blocked for Current & Out for Delivery) */}
                 {o.order_status !== "spam" && (
                   <select
                     value={o.order_status}
@@ -404,7 +423,6 @@ export default function OrdersTable({
                   </select>
                 )}
 
-                {/* Initiate Refund: Strictly for Delivered orders */}
                 {o.order_status === "delivered" && (
                   <button
                     onClick={() => onStatusChange(o, "refund")}
@@ -414,24 +432,20 @@ export default function OrdersTable({
                   </button>
                 )}
 
-                {/* Print Label */}
                 {canPrint && (
                   <button
                     onClick={() => onDownload(o)}
                     disabled={generatingLabel}
-                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs"
-                    title="Download Label"
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs"
                   >
                     📥 Label
                   </button>
                 )}
 
-                {/* Permanent Delete Spam (Only active in Spam tab, preserves customer profile) */}
                 {o.order_status === "spam" && (
                   <button
                     onClick={() => onDelete(o)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
-                    title="Delete spam order (Customer history kept permanently)"
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
                   >
                     🗑️ Delete Order (Keep Profile)
                   </button>
@@ -443,4 +457,4 @@ export default function OrdersTable({
       </div>
     </div>
   );
-                    }
+                      }
