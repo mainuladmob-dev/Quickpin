@@ -2,39 +2,50 @@
 
 type Order = any;
 
+// 1. Sothik Sequence onujayi Status List
 const STATUSES = [
-  { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-800 border-amber-200" },
   { value: "current", label: "Current Order", color: "bg-blue-100 text-blue-800 border-blue-200" },
   { value: "out_for_delivery", label: "Out for Delivery", color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
   { value: "delivered", label: "Delivered", color: "bg-emerald-100 text-emerald-800 border-emerald-200" },
-  { value: "refund", label: "Refunded", color: "bg-rose-100 text-rose-800 border-rose-200" },
+  { value: "refund", label: "Refund", color: "bg-rose-100 text-rose-800 border-rose-200" },
+  { value: "pending", label: "Pending Order", color: "bg-amber-100 text-amber-800 border-amber-200" },
   { value: "spam", label: "Spam", color: "bg-red-100 text-red-800 border-red-200" },
 ];
 
-// Strict State Transition Engine
+// 2. Strict State Transition Engine (Spam Guard Rules)
 function getAllowedNextStatuses(currentStatus: string) {
   switch (currentStatus) {
     case "pending":
+      // Pending -> Current Order ba Spam (Allowed)
       return [
-        { value: "pending", label: "Pending" },
+        { value: "pending", label: "Pending Order" },
         { value: "current", label: "Move to Current Order" },
         { value: "spam", label: "Mark as Spam" },
       ];
     case "current":
+      // Current -> Shudhu Out for Delivery (Spam strictly blocked)
       return [
         { value: "current", label: "Current Order" },
         { value: "out_for_delivery", label: "Send to Out for Delivery" },
-        { value: "spam", label: "Mark as Spam" },
       ];
     case "out_for_delivery":
+      // Out for Delivery -> Shudhu Delivered (Spam strictly blocked)
       return [
         { value: "out_for_delivery", label: "Out for Delivery" },
         { value: "delivered", label: "Mark as Delivered" },
       ];
     case "delivered":
-      return [{ value: "delivered", label: "Delivered" }];
+      // Delivered -> Delivered ba Spam (Allowed jodi customer cheat kore)
+      return [
+        { value: "delivered", label: "Delivered" },
+        { value: "spam", label: "Mark as Spam" },
+      ];
     case "refund":
-      return [{ value: "refund", label: "Refunded" }];
+      // Refund -> Refund ba Spam (Allowed)
+      return [
+        { value: "refund", label: "Refund" },
+        { value: "spam", label: "Mark as Spam" },
+      ];
     case "spam":
       return [{ value: "spam", label: "Spam" }];
     default:
@@ -145,7 +156,7 @@ export default function OrdersTable({
           </span>
         </div>
         <span className="text-[11px] text-slate-400 font-medium">
-          Showing filtered date records
+          Date Filtered Records
         </span>
       </div>
 
@@ -157,6 +168,10 @@ export default function OrdersTable({
           const canPrint = canPrintLabel(o);
           const codAmount = (o.total_amount || 0) - (o.partial_payment_amount || 0);
           const allowedTransitions = getAllowedNextStatuses(o.order_status);
+
+          // Refund Sub-status calculation (Pending vs Success)
+          const isRefund = o.order_status === "refund";
+          const isRefundSuccess = isRefund && (Boolean(o.transaction_ref) || o.refund_status === "success" || o.payment_status === "refunded");
 
           let orderItems: any[] = [];
           if (Array.isArray(o.order_items)) {
@@ -196,11 +211,28 @@ export default function OrdersTable({
                     >
                       #{o.order_number}
                     </button>
-                    <span
-                      className={`text-[11px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wide border ${statusInfo.color}`}
-                    >
-                      {statusInfo.label}
-                    </span>
+
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {/* Main Status Badge */}
+                      <span
+                        className={`text-[11px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wide border ${statusInfo.color}`}
+                      >
+                        {statusInfo.label}
+                      </span>
+
+                      {/* Refund Sub-Status Badge (Pending vs Success) */}
+                      {isRefund && (
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                            isRefundSuccess
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                              : "bg-amber-50 text-amber-700 border-amber-300 animate-pulse"
+                          }`}
+                        >
+                          {isRefundSuccess ? "✓ Settled" : "⏳ Action Pending"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-400">
                     {new Date(o.created_at).toLocaleString("en-IN", {
@@ -214,45 +246,43 @@ export default function OrdersTable({
                 </div>
               </div>
 
-              {/* Customer Info & Address Card */}
+              {/* Customer Info & Address Card (Permanent Fraud Tracking Data) */}
               <div className="bg-slate-50 rounded-lg p-3 mb-3 border border-slate-100">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-sm">👤</span>
                     <p className="text-xs font-bold text-slate-800 truncate">
-                      {o.profiles?.name || o.customer_name || "Customer"}
+                      {o.profiles?.name || o.customer_name || "Customer Record"}
                     </p>
                   </div>
-                  {o.profiles?.phone ? (
+                  {o.profiles?.phone || o.customer_phone ? (
                     <a
-                      href={`tel:${o.profiles.phone}`}
+                      href={`tel:${o.profiles?.phone || o.customer_phone}`}
                       className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"
                     >
                       <span>📱</span>
-                      <span>{o.profiles.phone}</span>
+                      <span>{o.profiles?.phone || o.customer_phone}</span>
                     </a>
                   ) : (
-                    <p className="text-xs text-slate-400">
-                      {o.profiles?.email || "No phone recorded"}
-                    </p>
+                    <p className="text-xs text-slate-400">No phone attached</p>
                   )}
                 </div>
 
                 {o.delivery_type !== "self_pickup" && (
                   <div className="mt-2 pt-2 border-t border-slate-200/60 text-xs text-slate-600">
                     <p className="font-semibold text-slate-700">📍 Delivery Address:</p>
-                    <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed">
+                    <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed font-mono">
                       {address.full_address ||
                         address.address_line ||
                         [address.street, address.city, address.pincode]
                           .filter(Boolean)
                           .join(", ") ||
-                        "Address saved in customer profile"}
+                        "Address saved in record"}
                     </p>
                   </div>
                 )}
               </div>
-                 {/* Ordered Items with Weight (Kg) Breakdown */}
+              {/* Ordered Items with Weight (Kg) Breakdown */}
               {orderItems.length > 0 && (
                 <div className="bg-white rounded-lg border border-slate-200 p-3 mb-3 space-y-2">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
@@ -328,6 +358,12 @@ export default function OrdersTable({
                     <span className="text-amber-700 font-bold">COD Due: ₹{codAmount.toFixed(2)}</span>
                   </div>
                 )}
+                {isRefund && (
+                  <div className="flex justify-between pt-1 border-t border-rose-200 mt-1 text-rose-700 font-semibold">
+                    <span>Refunded Amount:</span>
+                    <span>- ₹{o.refund_amount || 0} ({o.refund_method || "UPI"})</span>
+                  </div>
+                )}
               </div>
 
               {/* Badges Row */}
@@ -353,8 +389,8 @@ export default function OrdersTable({
 
               {/* Action Controls */}
               <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
-                {/* Dynamic Safe Status Selector */}
-                {o.order_status !== "delivered" && o.order_status !== "refund" ? (
+                {/* Safe Transition Selector (Spam-blocked for Current & Out for Delivery) */}
+                {o.order_status !== "spam" && (
                   <select
                     value={o.order_status}
                     onChange={(e) => onStatusChange(o, e.target.value)}
@@ -366,23 +402,19 @@ export default function OrdersTable({
                       </option>
                     ))}
                   </select>
-                ) : (
-                  <div className="flex-1">
-                    {o.order_status === "delivered" ? (
-                      <button
-                        onClick={() => onStatusChange(o, "refund")}
-                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
-                      >
-                        🔄 Initiate Refund
-                      </button>
-                    ) : (
-                      <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
-                        Refund Processed
-                      </span>
-                    )}
-                  </div>
                 )}
 
+                {/* Initiate Refund: Strictly for Delivered orders */}
+                {o.order_status === "delivered" && (
+                  <button
+                    onClick={() => onStatusChange(o, "refund")}
+                    className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                  >
+                    🔄 Initiate Refund
+                  </button>
+                )}
+
+                {/* Print Label */}
                 {canPrint && (
                   <button
                     onClick={() => onDownload(o)}
@@ -394,13 +426,14 @@ export default function OrdersTable({
                   </button>
                 )}
 
+                {/* Permanent Delete Spam (Only active in Spam tab, preserves customer profile) */}
                 {o.order_status === "spam" && (
                   <button
                     onClick={() => onDelete(o)}
-                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition"
-                    title="Permanently Delete"
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition flex items-center gap-1"
+                    title="Delete spam order (Customer history kept permanently)"
                   >
-                    🗑️
+                    🗑️ Delete Order (Keep Profile)
                   </button>
                 )}
               </div>
@@ -410,4 +443,4 @@ export default function OrdersTable({
       </div>
     </div>
   );
-}
+                    }
