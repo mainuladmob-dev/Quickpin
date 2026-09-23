@@ -627,12 +627,9 @@ export default function AdminOrdersPage() {
                       <p className="text-gray-500 text-[11px]">Requested in {item.orderCount} order(s)</p>
                     </div>
                     <div className="text-right">
-                                            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
                         Total: {item.totalQty} Units{item.totalWeight > 0 ? ` (${item.totalWeight.toFixed(2)} Kg)` : ""}
-                      </span>
-                      
-                        Total: {item.totalQty} Units / Kg
-                      </span>
+                      </span>      
                     </div>
                   </div>
                 ))
