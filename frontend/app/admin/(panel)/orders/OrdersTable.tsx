@@ -223,4 +223,152 @@ export default function OrdersTable({
                   </div>
                 )}
               </div>
+                            {/* Ordered Items with Thumbnails */}
+              {orderItems.length > 0 && (
+                <div className="bg-white rounded-lg border border-gray-200 p-3 mb-3 space-y-2">
+                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                    Ordered Items ({orderItems.length})
+                  </p>
+                  <div className="space-y-2">
+                    {orderItems.map((item: any, idx: number) => {
+                      const itemName = resolveItemName(item);
+                      const itemImg = resolveImageUrl(item);
+                      const qty = Number(item.quantity || item.qty || item.count || 1);
+                      const price = Number(item.price || item.unit_price || 0);
+                      const subtotal = (price * qty).toFixed(2);
+
+                      return (
+                        <div
+                          key={item.id || idx}
+                          className="flex items-center justify-between gap-2 text-xs py-1 border-b border-gray-100 last:border-b-0"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            {/* Product Thumbnail */}
+                            {itemImg ? (
+                              <img
+                                src={itemImg}
+                                alt={itemName}
+                                className="w-10 h-10 object-cover rounded-lg border border-gray-200 bg-white flex-shrink-0"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = "none";
+                                }}
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-sm flex-shrink-0">
+                                🛍️
+                              </div>
+                            )}
+
+                            {/* English Name & Quantity */}
+                            <div className="min-w-0">
+                              <p className="font-semibold text-gray-800 truncate">
+                                {itemName}
+                              </p>
+                              <p className="text-[11px] text-gray-500">
+                                ₹{price} × {qty}
+                              </p>
+                            </div>
+                          </div>
+
+                          <span className="font-bold text-gray-800 flex-shrink-0">
+                            ₹{subtotal}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Amount Breakdown */}
+              <div className="bg-white rounded-lg border border-gray-200 p-3 mb-3">
+                <div className="flex justify-between text-sm mb-1">
+                  <span className="text-gray-600 font-medium">Total</span>
+                  <span className="font-bold text-gray-800">
+                    ₹{o.total_amount}
+                  </span>
+                </div>
+                {o.payment_type === "partial" && (
+                  <>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-green-700 font-medium">Advance</span>
+                      <span className="font-bold text-green-700">
+                        ₹{o.partial_payment_amount}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-xs mt-1">
+                      <span className="text-orange-700 font-medium">COD</span>
+                      <span className="font-bold text-orange-700">
+                        ₹{codAmount.toFixed(2)}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Delivery + Payment Type Row */}
+              <div className="flex items-center gap-2 mb-3 text-xs">
+                <span className="px-2 py-1 bg-gray-100 rounded-md font-medium text-gray-700">
+                  {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home"}
+                </span>
+                <span className="px-2 py-1 bg-blue-50 rounded-md font-medium text-blue-700">
+                  {o.payment_type === "full" ? "Full" : "Advance"}
+                </span>
+                <span
+                  className={`px-2 py-1 rounded-md font-medium ${
+                    o.payment_status === "success"
+                      ? "bg-green-100 text-green-700"
+                      : o.payment_status === "pending"
+                      ? "bg-yellow-100 text-yellow-700"
+                      : o.payment_status === "failed"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-purple-100 text-purple-700"
+                  }`}
+                >
+                  {o.payment_status}
+                </span>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                <select
+                  value={o.order_status}
+                  onChange={(e) => onStatusChange(o, e.target.value)}
+                  className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-2 text-gray-900 font-medium bg-gray-50 outline-none"
+                >
+                  {STATUSES.map((s) => (
+                    <option key={s.value} value={s.value}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
+
+                {canPrint && (
+                  <button
+                    onClick={() => onDownload(o)}
+                    disabled={generatingLabel}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3.5 py-2 rounded-lg font-medium disabled:opacity-50 flex items-center gap-1 transition"
+                    title="Download Label"
+                  >
+                    📥 Label
+                  </button>
+                )}
+
+                {o.order_status === "spam" && (
+                  <button
+                    onClick={() => onDelete(o)}
+                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition"
+                  >
+                    🗑️
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
               
