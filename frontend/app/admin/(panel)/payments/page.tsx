@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 type Order = {
@@ -35,7 +36,7 @@ export default function AdminPaymentsPage() {
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [imageLoading, setImageLoading] = useState(false);
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     let query = supabase
       .from("orders")
@@ -48,7 +49,13 @@ export default function AdminPaymentsPage() {
       query = query.eq("payment_status", "success");
     }
 
-    const { data } = await query;
+    const { data, error } = await query;
+    if (error) {
+      console.error("Error fetching orders:", error.message);
+      setLoading(false);
+      return;
+    }
+
     const orderList = (data as Order[]) || [];
     setOrders(orderList);
 
@@ -70,20 +77,19 @@ export default function AdminPaymentsPage() {
     }
 
     setLoading(false);
-  };
+  }, [filter, supabase]);
 
   useEffect(() => {
     fetchOrders();
-  }, [filter]);
+  }, [fetchOrders]);
 
   const handleApprove = async (order: Order) => {
-    if (!confirm(`Approve payment for order ${order.order_number}?`)) return;
+    if (!confirm(`Approve payment for order #${order.order_number}?`)) return;
     setProcessing(true);
 
-    const paidAmount =
-      order.payment_type === "partial"
-        ? order.partial_payment_amount
-        : order.total_amount;
+    const total = Number(order.total_amount || 0);
+    const partial = Number(order.partial_payment_amount || 0);
+    const paidAmount = order.payment_type === "partial" ? partial : total;
 
     const { error } = await supabase
       .from("orders")
@@ -96,13 +102,13 @@ export default function AdminPaymentsPage() {
         status_changed_at: new Date().toISOString(),
         rejection_reason: null,
         paid_amount: paidAmount,
-        remaining_amount: order.total_amount - paidAmount,
+        remaining_amount: Math.max(0, total - paidAmount),
       })
       .eq("id", order.id);
 
     setProcessing(false);
     if (error) {
-      alert(error.message);
+      alert("Approval failed: " + error.message);
       return;
     }
     fetchOrders();
@@ -116,7 +122,7 @@ export default function AdminPaymentsPage() {
     }
     setProcessing(true);
 
-    const newAttempts = (rejecting.screenshot_attempts || 0) + 1;
+    const newAttempts = Number(rejecting.screenshot_attempts || 0) + 1;
     const maxAttempts = 3;
 
     const updateData: any = {
@@ -128,6 +134,7 @@ export default function AdminPaymentsPage() {
 
     if (newAttempts >= maxAttempts) {
       updateData.order_status = "spam";
+      updateData.payment_status = "failed";
       updateData.status_changed_at = new Date().toISOString();
     }
 
@@ -138,7 +145,7 @@ export default function AdminPaymentsPage() {
 
     setProcessing(false);
     if (error) {
-      alert(error.message);
+      alert("Rejection failed: " + error.message);
       return;
     }
     setRejecting(null);
@@ -156,14 +163,18 @@ export default function AdminPaymentsPage() {
 
     setImageLoading(true);
 
+    const sanitizedPath = order.payment_screenshot_url
+      .replace(/^payment-screenshots\//, "")
+      .replace(/^\/+/, "");
+
     const { data, error } = await supabase.storage
       .from("payment-screenshots")
-      .createSignedUrl(order.payment_screenshot_url, 3600);
+      .createSignedUrl(sanitizedPath, 3600);
 
     setImageLoading(false);
 
     if (error || !data) {
-      alert("Screenshot load failed: " + (error?.message || "Unknown error"));
+      alert("Screenshot load failed: " + (error?.message || "File not found"));
       return;
     }
 
@@ -171,151 +182,173 @@ export default function AdminPaymentsPage() {
   };
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">
-        Payment Verification
-      </h1>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+        <div>
+          <h1 className="text-xl font-bold text-slate-800">
+            Payment Verification
+          </h1>
+          <p className="text-xs text-slate-500">
+            Audit UPI screenshots and verify customer advance/full payments
+          </p>
+        </div>
+      </div>
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-1.5">
         {(["pending", "success", "all"] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium capitalize ${
+            className={`px-3 py-1.5 text-xs rounded-lg font-semibold capitalize transition ${
               filter === f
-                ? "bg-blue-600 text-white"
-                : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
+                ? "bg-blue-600 text-white shadow-xs"
+                : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50"
             }`}
           >
-            {f}
+            {f === "pending" ? "Pending Verification" : f}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <p className="text-gray-500">Loading...</p>
+        <div className="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-xs">Loading payment orders...</p>
+        </div>
       ) : orders.length === 0 ? (
-        <div className="bg-white rounded-xl p-8 text-center text-gray-500">
+        <div className="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200 text-xs">
           No {filter} payments found.
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {orders.map((o) => {
             const profile = o.user_id ? profiles[o.user_id] : null;
-            const codAmount = o.total_amount - o.partial_payment_amount;
+            const total = Number(o.total_amount || 0);
+            const partial = Number(o.partial_payment_amount || 0);
+            const paid = Number(o.paid_amount || 0);
+            const remaining = Number(o.remaining_amount || 0);
+            const codAmount = Math.max(0, total - partial);
+
             return (
               <div
                 key={o.id}
-                className="bg-white rounded-xl border border-gray-200 p-4"
+                className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs"
               >
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex-1 min-w-[200px]">
                     <div className="flex items-center gap-2 mb-1">
-                      <p className="font-bold text-gray-800">{o.order_number}</p>
+                      <p className="font-bold text-slate-900 text-sm">
+                        #{o.order_number}
+                      </p>
                       <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border ${
                           o.payment_status === "success"
-                            ? "bg-green-100 text-green-700"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                             : o.payment_status === "pending"
-                            ? "bg-yellow-100 text-yellow-700"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
                             : o.payment_status === "failed"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-purple-100 text-purple-700"
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-purple-50 text-purple-700 border-purple-200"
                         }`}
                       >
                         {o.payment_status}
                       </span>
                     </div>
-                    <p className="text-xs text-gray-500">
-                      {profile?.name || "—"} • {profile?.email || ""}
+                    <p className="text-xs text-slate-600">
+                      👤 {profile?.name || "Customer"} {profile?.email ? `• ${profile.email}` : ""}
                     </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      {new Date(o.created_at).toLocaleString("en-IN")}
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {new Date(o.created_at).toLocaleString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </p>
                   </div>
 
                   <div className="text-right">
-                    <p className="text-lg font-bold text-gray-800">
-                      ₹{o.total_amount}
+                    <p className="text-base font-bold text-slate-900">
+                      ₹{total.toFixed(2)}
                     </p>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-slate-600 mt-0.5">
                       {o.payment_type === "partial" ? (
                         <>
-                          Advance: ₹{o.partial_payment_amount} • COD: ₹
-                          {codAmount.toFixed(2)}
+                          <span className="font-semibold text-emerald-700">Advance: ₹{partial.toFixed(2)}</span>
+                          {" • "}
+                          <span className="font-semibold text-amber-700">COD: ₹{codAmount.toFixed(2)}</span>
                         </>
                       ) : (
                         <>
-                          Paid: ₹{o.paid_amount} • Due: ₹{o.remaining_amount}
+                          Paid: ₹{paid.toFixed(2)} • Due: ₹{remaining.toFixed(2)}
                         </>
                       )}
                     </p>
                     {o.payment_method && (
-                      <p className="text-xs text-gray-400 mt-1">
+                      <p className="text-[11px] text-slate-400 mt-0.5 uppercase tracking-wide font-medium">
                         Method: {o.payment_method}
                       </p>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">
-                      UPI Transaction ID
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3 text-xs">
+                  <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                    <p className="text-[11px] text-slate-500 mb-0.5 font-medium">
+                      UPI Transaction ID / Ref
                     </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {o.upi_transaction_id || "—"}
+                    <p className="font-mono font-semibold text-slate-800 truncate">
+                      {o.upi_transaction_id || "Not Provided"}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">
-                      Screenshot Status
+                  <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                    <p className="text-[11px] text-slate-500 mb-0.5 font-medium">
+                      Screenshot Audit
                     </p>
-                    <p className="text-sm font-medium text-gray-800 capitalize">
+                    <p className="font-semibold text-slate-800 capitalize">
                       {o.screenshot_status}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3">
-                    <p className="text-xs text-gray-500 mb-1">
-                      Screenshot Attempts
+                  <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                    <p className="text-[11px] text-slate-500 mb-0.5 font-medium">
+                      Submission Attempts
                     </p>
-                    <p className="text-sm font-medium text-gray-800">
-                      {o.screenshot_attempts || 0} / 3
+                    <p className="font-semibold text-slate-800">
+                      {o.screenshot_attempts || 0} / 3 Attempts
                     </p>
                   </div>
                 </div>
 
                 {o.payment_screenshot_url && (
-                  <div className="mt-3">
-                    <p className="text-xs text-gray-500 mb-2">
-                      Customer Payment Screenshot
-                    </p>
+                  <div className="mt-3 flex items-center gap-2">
                     <button
                       onClick={() => handleViewScreenshot(o)}
                       disabled={imageLoading}
-                      className="text-blue-600 hover:underline text-sm font-medium disabled:opacity-50"
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold px-3 py-1.5 rounded-lg border border-slate-200 flex items-center gap-1.5 transition disabled:opacity-50"
                     >
-                      {imageLoading ? "Loading..." : "📸 View Screenshot"}
+                      <span>📸</span>
+                      <span>{imageLoading ? "Opening Image..." : "View Payment Proof"}</span>
                     </button>
                   </div>
                 )}
 
                 {o.rejection_reason && (
-                  <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-2">
-                    <p className="text-xs text-red-700">
-                      <strong>Last rejection:</strong> {o.rejection_reason}
+                  <div className="mt-3 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+                    <p className="text-xs text-rose-700">
+                      <strong>Audit Note (Rejected):</strong> {o.rejection_reason}
                     </p>
                   </div>
                 )}
 
                 {o.payment_status === "pending" && (
-                  <div className="flex gap-2 mt-4">
+                  <div className="flex gap-2 mt-3 pt-3 border-t border-slate-100">
                     <button
                       onClick={() => handleApprove(o)}
                       disabled={processing}
-                      className="bg-green-600 hover:bg-green-700 text-white text-sm px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50 transition shadow-xs"
                     >
-                      ✅ Approve Payment
+                      ✓ Approve Payment
                     </button>
                     <button
                       onClick={() => {
@@ -323,9 +356,9 @@ export default function AdminPaymentsPage() {
                         setRejectReason("");
                       }}
                       disabled={processing}
-                      className="bg-red-50 hover:bg-red-100 text-red-700 text-sm px-4 py-2 rounded-lg font-medium disabled:opacity-50"
+                      className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold px-4 py-2 rounded-lg disabled:opacity-50 transition"
                     >
-                      ❌ Reject
+                      ✕ Reject Screenshot
                     </button>
                   </div>
                 )}
@@ -335,71 +368,76 @@ export default function AdminPaymentsPage() {
         </div>
       )}
 
+      {/* Reject Modal */}
       {rejecting && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-md p-6">
-            <h2 className="text-lg font-bold mb-1">Reject Payment</h2>
-            <p className="text-sm text-gray-500 mb-4">
-              Order #{rejecting.order_number}
-            </p>
+          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">
+                Reject Payment Proof
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Order #{rejecting.order_number}
+              </p>
+            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Rejection Reason *
-                </label>
-                <textarea
-                  rows={3}
-                  value={rejectReason}
-                  onChange={(e) => setRejectReason(e.target.value)}
-                  placeholder="e.g. Blurry screenshot, amount mismatch..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Rejection Reason *
+              </label>
+              <textarea
+                rows={3}
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                placeholder="e.g. Unclear screenshot, UTR not matching statement..."
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 text-xs"
+              />
+            </div>
 
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                ⚠️ Customer কে আবার screenshot দিতে বলা হবে। এটা attempt #
-                {(rejecting.screenshot_attempts || 0) + 1} হবে। 3 attempts এর পর
-                order স্বয়ংক্রিয়ভাবে Spam এ যাবে।
-              </div>
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+              ⚠️ Attempt count will become{" "}
+              <strong>{(Number(rejecting.screenshot_attempts || 0)) + 1} of 3</strong>.
+              After 3 failed attempts, order status will automatically shift to <strong>Spam</strong>.
+            </div>
 
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => setRejecting(null)}
-                  className="flex-1 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitReject}
-                  disabled={processing}
-                  className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium disabled:opacity-50"
-                >
-                  {processing ? "Rejecting..." : "Confirm Reject"}
-                </button>
-              </div>
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setRejecting(null)}
+                className="flex-1 py-2 text-xs font-semibold border border-slate-300 rounded-lg text-slate-700 hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitReject}
+                disabled={processing}
+                className="flex-1 py-2 text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-lg disabled:opacity-50 transition shadow-xs"
+              >
+                {processing ? "Rejecting..." : "Confirm Reject"}
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Fullscreen Proof Preview */}
       {viewingImage && (
         <div
           onClick={() => setViewingImage(null)}
-          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
         >
-          <div className="max-w-full max-h-full">
+          <div className="max-w-full max-h-full flex flex-col items-center">
             <img
               src={viewingImage}
               alt="Payment screenshot"
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl border border-white/10"
             />
-            <p className="text-white text-center text-xs mt-3">
-              Tap anywhere to close
+            <p className="text-white/80 text-xs mt-3 bg-black/60 px-3 py-1 rounded-full">
+              Click anywhere to close
             </p>
           </div>
         </div>
       )}
     </div>
   );
-         }
+      }
+      
