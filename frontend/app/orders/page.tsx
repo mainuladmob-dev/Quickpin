@@ -10,6 +10,8 @@ import UserMenu from "@/components/UserMenu";
 type OrderItem = {
   id?: string;
   name?: string;
+  name_bn?: string;
+  name_en?: string;
   product_name?: string;
   title?: string;
   quantity?: number;
@@ -17,8 +19,9 @@ type OrderItem = {
   count?: number;
   price?: number;
   unit_price?: number;
-  image?: string;
-  image_url?: string;
+  image?: any;
+  images?: any;
+  image_url?: any;
   product?: any;
   products?: any;
   [key: string]: any;
@@ -79,6 +82,84 @@ const STATUS_LABELS: Record<
   },
 };
 
+// ছবির আসল লিঙ্ক বের করার ডায়নামিক ফাংশন
+function resolveImageUrl(item: any): string | null {
+  const p = item?.products || item?.product || {};
+  const raw =
+    p.images ??
+    p.image ??
+    p.image_url ??
+    item?.images ??
+    item?.image ??
+    item?.image_url ??
+    p.thumbnail ??
+    p.photo ??
+    null;
+
+  if (!raw) return null;
+
+  let target: any = raw;
+
+  // ১. যদি সরাসরি অ্যারে থাকে
+  if (Array.isArray(target) && target.length > 0) {
+    target = target[0];
+  }
+
+  // ২. যদি স্ট্রিং আকারে JSON অ্যারে '["https://..."]' থাকে
+  if (typeof target === "string") {
+    const trimmed = target.trim();
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          target = parsed[0];
+        }
+      } catch {
+        target = trimmed.replace(/[\[\]"']/g, "");
+      }
+    }
+  }
+
+  if (typeof target !== "string" || !target.trim()) return null;
+  target = target.trim();
+
+  // ৩. যদি সম্পূর্ণ URL হয়
+  if (target.startsWith("http://") || target.startsWith("https://")) {
+    return target;
+  }
+
+  // ৪. যদি শুধুমাত্র ফাইলের নাম বা আপেক্ষিক পাথ থাকে
+  const cleanPath = target.replace(/^\/+/, "").replace(/^products\//, "");
+  return `https://uewgqsfptqbkytfyozqi.supabase.co/storage/v1/object/public/products/${cleanPath}`;
+}
+
+// প্রোডাক্টের ভাষা অনুযায়ী সঠিক নাম পাওয়ার ফাংশন
+function resolveItemName(item: any, lang: string): string {
+  const p = item?.products || item?.product || {};
+  if (lang === "bn") {
+    return (
+      p.name_bn ||
+      item.name_bn ||
+      p.name ||
+      item.name ||
+      item.product_name ||
+      p.title ||
+      item.title ||
+      "আইটেম"
+    );
+  }
+  return (
+    p.name_en ||
+    item.name_en ||
+    p.name ||
+    item.name ||
+    item.product_name ||
+    p.title ||
+    item.title ||
+    "Item"
+  );
+}
+
 export default function MyOrdersPage() {
   const supabase = createClient();
   const { lang, t } = useLanguage();
@@ -97,7 +178,7 @@ export default function MyOrdersPage() {
 
       let fetchedOrders: any[] = [];
 
-      // ১. মূল প্রোডাক্ট টেবিলের নাম ও ছবি সহ ফেচ করার চেষ্টা
+      // ১. সম্পূর্ণ ডেটা রিলেশনসহ ফেচ করা
       const { data: deepData, error: deepError } = await supabase
         .from("orders")
         .select("*, order_items(*, products(*))")
@@ -107,7 +188,7 @@ export default function MyOrdersPage() {
       if (!deepError && deepData) {
         fetchedOrders = deepData;
       } else {
-        // ২. যদি রিলেশনে নাম ভিন্ন হয়, তবে সাধারণ order_items সহ ফেচ
+        // ২. রিলেশন ব্যাকআপ
         const { data: itemData, error: itemError } = await supabase
           .from("orders")
           .select("*, order_items(*)")
@@ -117,7 +198,7 @@ export default function MyOrdersPage() {
         if (!itemError && itemData) {
           fetchedOrders = itemData;
         } else {
-          // ৩. ব্যাকআপ কুয়েরি (সাইট যেন কোনো অবস্থাতেই ক্র্যাশ না করে)
+          // ৩. সেফটি ব্যাকআপ
           const { data: fallbackData } = await supabase
             .from("orders")
             .select("*")
@@ -245,12 +326,12 @@ export default function MyOrdersPage() {
               const isPartialAdvancePaid =
                 o.payment_type === "partial" && (o.paid_amount || 0) > 0;
 
-              // প্রোডাক্ট আইটেম বের করার লজিক
+              // অর্ডার আইটেম পার্সিং
               let orderItems: any[] = [];
-              if (Array.isArray(o.items)) {
-                orderItems = o.items;
-              } else if (Array.isArray(o.order_items)) {
+              if (Array.isArray(o.order_items)) {
                 orderItems = o.order_items;
+              } else if (Array.isArray(o.items)) {
+                orderItems = o.items;
               } else if (typeof o.items === "string") {
                 try {
                   orderItems = JSON.parse(o.items);
@@ -262,7 +343,7 @@ export default function MyOrdersPage() {
               return (
                 <div
                   key={o.id}
-                  className="bg-white rounded-xl p-4 border border-gray-200"
+                  className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm"
                 >
                   <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
@@ -309,7 +390,7 @@ export default function MyOrdersPage() {
                     </div>
                   </div>
 
-                  {/* ✅ ছবি, নাম ও প্রাইস ব্রেকডাউন সহ আইটেম সেকশন */}
+                  {/* সম্পূর্ণ ডাইনামিক প্রোডাক্ট ও থাম্বনেইল ডিসপ্লে */}
                   {orderItems.length > 0 && (
                     <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2.5">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -317,27 +398,8 @@ export default function MyOrdersPage() {
                       </p>
                       <div className="space-y-2">
                         {orderItems.map((item: any, idx: number) => {
-                          const relProduct = item.products || item.product || {};
-                          
-                          const itemName =
-                            item.name ||
-                            item.product_name ||
-                            relProduct.name ||
-                            relProduct.title ||
-                            relProduct.name_bn ||
-                            relProduct.name_en ||
-                            item.title ||
-                            "Item";
-
-                          const itemImage =
-                            item.image ||
-                            item.image_url ||
-                            relProduct.image ||
-                            relProduct.image_url ||
-                            relProduct.thumbnail ||
-                            relProduct.photo ||
-                            null;
-
+                          const itemName = resolveItemName(item, lang);
+                          const itemImage = resolveImageUrl(item);
                           const itemQty =
                             item.quantity || item.qty || item.count || 1;
                           const itemPrice = item.price || item.unit_price || 0;
@@ -348,16 +410,21 @@ export default function MyOrdersPage() {
                               key={item.id || idx}
                               className="flex items-center justify-between gap-3 text-sm"
                             >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                {/* থাম্বনেইল ছবি */}
+                              <div className="flex items-center gap-3 min-w-0">
+                                {/* প্রোডাক্ট থাম্বনেইল */}
                                 {itemImage ? (
                                   <img
                                     src={itemImage}
                                     alt={itemName}
-                                    className="w-10 h-10 object-cover rounded-lg border border-gray-100 flex-shrink-0"
+                                    className="w-11 h-11 object-cover rounded-lg border border-gray-100 bg-gray-50 flex-shrink-0"
+                                    onError={(e) => {
+                                      // ছবি লোড না হলে আইকনে ফলব্যাক করবে
+                                      (e.target as HTMLElement).style.display =
+                                        "none";
+                                    }}
                                   />
                                 ) : (
-                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-base flex-shrink-0">
+                                  <div className="w-11 h-11 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
                                     🛍️
                                   </div>
                                 )}
@@ -475,5 +542,5 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-                        }
-                    
+}
+  
