@@ -3,13 +3,44 @@
 type Order = any;
 
 const STATUSES = [
-  { value: "pending", label: "Pending", color: "bg-yellow-100 text-yellow-700" },
-  { value: "current", label: "Current", color: "bg-green-100 text-green-700" },
-  { value: "out_for_delivery", label: "Out for Delivery", color: "bg-blue-100 text-blue-700" },
-  { value: "delivered", label: "Delivered", color: "bg-emerald-100 text-emerald-700" },
-  { value: "refund", label: "Refund", color: "bg-purple-100 text-purple-700" },
-  { value: "spam", label: "Spam", color: "bg-red-100 text-red-700" },
+  { value: "pending", label: "Pending", color: "bg-amber-100 text-amber-800 border-amber-200" },
+  { value: "current", label: "Current Order", color: "bg-blue-100 text-blue-800 border-blue-200" },
+  { value: "out_for_delivery", label: "Out for Delivery", color: "bg-indigo-100 text-indigo-800 border-indigo-200" },
+  { value: "delivered", label: "Delivered", color: "bg-emerald-100 text-emerald-800 border-emerald-200" },
+  { value: "refund", label: "Refunded", color: "bg-rose-100 text-rose-800 border-rose-200" },
+  { value: "spam", label: "Spam", color: "bg-red-100 text-red-800 border-red-200" },
 ];
+
+// Strict State Transition Engine
+function getAllowedNextStatuses(currentStatus: string) {
+  switch (currentStatus) {
+    case "pending":
+      return [
+        { value: "pending", label: "Pending" },
+        { value: "current", label: "Move to Current Order" },
+        { value: "spam", label: "Mark as Spam" },
+      ];
+    case "current":
+      return [
+        { value: "current", label: "Current Order" },
+        { value: "out_for_delivery", label: "Send to Out for Delivery" },
+        { value: "spam", label: "Mark as Spam" },
+      ];
+    case "out_for_delivery":
+      return [
+        { value: "out_for_delivery", label: "Out for Delivery" },
+        { value: "delivered", label: "Mark as Delivered" },
+      ];
+    case "delivered":
+      return [{ value: "delivered", label: "Delivered" }];
+    case "refund":
+      return [{ value: "refund", label: "Refunded" }];
+    case "spam":
+      return [{ value: "spam", label: "Spam" }];
+    default:
+      return [{ value: currentStatus, label: currentStatus }];
+  }
+}
 
 // Helper: Smart Image URL Resolver
 function resolveImageUrl(item: any): string | null {
@@ -28,19 +59,14 @@ function resolveImageUrl(item: any): string | null {
   if (!raw) return null;
 
   let target: any = raw;
-
-  if (Array.isArray(target) && target.length > 0) {
-    target = target[0];
-  }
+  if (Array.isArray(target) && target.length > 0) target = target[0];
 
   if (typeof target === "string") {
     const trimmed = target.trim();
     if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
       try {
         const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          target = parsed[0];
-        }
+        if (Array.isArray(parsed) && parsed.length > 0) target = parsed[0];
       } catch {
         target = trimmed.replace(/[\[\]"']/g, "");
       }
@@ -50,9 +76,7 @@ function resolveImageUrl(item: any): string | null {
   if (typeof target !== "string" || !target.trim()) return null;
   target = target.trim();
 
-  if (target.startsWith("http://") || target.startsWith("https://")) {
-    return target;
-  }
+  if (target.startsWith("http://") || target.startsWith("https://")) return target;
 
   const cleanPath = target.replace(/^\/+/, "").replace(/^products\//, "");
   return `https://uewgqsfptqbkytfyozqi.supabase.co/storage/v1/object/public/products/${cleanPath}`;
@@ -102,21 +126,26 @@ export default function OrdersTable({
     STATUSES.find((s) => s.value === status) || {
       value: status,
       label: status,
-      color: "bg-gray-100 text-gray-700",
+      color: "bg-slate-100 text-slate-700 border-slate-200",
     };
 
   return (
-    <div>
+    <div className="space-y-3">
       {/* Select All Bar */}
-      <div className="bg-white rounded-xl px-4 py-3 mb-3 flex items-center gap-3 border border-gray-200 shadow-sm">
-        <input
-          type="checkbox"
-          checked={selected.length === orders.length && orders.length > 0}
-          onChange={onToggleSelectAll}
-          className="w-5 h-5 accent-blue-600 cursor-pointer"
-        />
-        <span className="text-sm text-gray-600 font-medium">
-          Select All ({orders.length})
+      <div className="bg-white rounded-xl px-4 py-3 flex items-center justify-between border border-slate-200 shadow-xs">
+        <div className="flex items-center gap-3">
+          <input
+            type="checkbox"
+            checked={selected.length === orders.length && orders.length > 0}
+            onChange={onToggleSelectAll}
+            className="w-4 h-4 accent-blue-600 rounded cursor-pointer"
+          />
+          <span className="text-xs text-slate-700 font-semibold">
+            Select All ({orders.length} Orders)
+          </span>
+        </div>
+        <span className="text-[11px] text-slate-400 font-medium">
+          Showing filtered date records
         </span>
       </div>
 
@@ -127,6 +156,7 @@ export default function OrdersTable({
           const isSelected = selected.includes(o.id);
           const canPrint = canPrintLabel(o);
           const codAmount = (o.total_amount || 0) - (o.partial_payment_amount || 0);
+          const allowedTransitions = getAllowedNextStatuses(o.order_status);
 
           let orderItems: any[] = [];
           if (Array.isArray(o.order_items)) {
@@ -146,8 +176,8 @@ export default function OrdersTable({
           return (
             <div
               key={o.id}
-              className={`bg-white rounded-xl border-2 p-4 transition ${
-                isSelected ? "border-blue-500 bg-blue-50/40" : "border-gray-200"
+              className={`bg-white rounded-xl border p-4 transition shadow-xs ${
+                isSelected ? "border-blue-500 bg-blue-50/20 ring-1 ring-blue-500" : "border-slate-200"
               }`}
             >
               {/* Header Row */}
@@ -156,23 +186,23 @@ export default function OrdersTable({
                   type="checkbox"
                   checked={isSelected}
                   onChange={() => onToggleSelect(o.id)}
-                  className="mt-1 w-5 h-5 accent-blue-600 flex-shrink-0 cursor-pointer"
+                  className="mt-1 w-4 h-4 accent-blue-600 rounded cursor-pointer flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-1">
                     <button
                       onClick={() => onView(o)}
-                      className="font-bold text-gray-900 text-sm hover:text-blue-600 text-left transition"
+                      className="font-bold text-slate-900 text-sm hover:text-blue-600 text-left transition"
                     >
-                      {o.order_number}
+                      #{o.order_number}
                     </button>
                     <span
-                      className={`text-xs px-2.5 py-1 rounded-full font-semibold flex-shrink-0 ${statusInfo.color}`}
+                      className={`text-[11px] px-2.5 py-0.5 rounded-md font-bold uppercase tracking-wide border ${statusInfo.color}`}
                     >
                       {statusInfo.label}
                     </span>
                   </div>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[11px] text-slate-400">
                     {new Date(o.created_at).toLocaleString("en-IN", {
                       day: "2-digit",
                       month: "short",
@@ -184,12 +214,12 @@ export default function OrdersTable({
                 </div>
               </div>
 
-              {/* Customer Info & Direct Delivery Address */}
-              <div className="bg-gray-50 rounded-lg p-3 mb-3">
+              {/* Customer Info & Address Card */}
+              <div className="bg-slate-50 rounded-lg p-3 mb-3 border border-slate-100">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="text-sm">👤</span>
-                    <p className="text-sm font-semibold text-gray-800 truncate">
+                    <p className="text-xs font-bold text-slate-800 truncate">
                       {o.profiles?.name || o.customer_name || "Customer"}
                     </p>
                   </div>
@@ -202,32 +232,31 @@ export default function OrdersTable({
                       <span>{o.profiles.phone}</span>
                     </a>
                   ) : (
-                    <p className="text-xs text-gray-400">
-                      {o.profiles?.email || "No phone"}
+                    <p className="text-xs text-slate-400">
+                      {o.profiles?.email || "No phone recorded"}
                     </p>
                   )}
                 </div>
 
-                {/* Delivery Address (Directly Visible) */}
                 {o.delivery_type !== "self_pickup" && (
-                  <div className="mt-2 pt-2 border-t border-gray-200/70 text-xs text-gray-600">
-                    <p className="font-semibold text-gray-700">📍 Delivery Address:</p>
-                    <p className="mt-0.5 leading-relaxed">
+                  <div className="mt-2 pt-2 border-t border-slate-200/60 text-xs text-slate-600">
+                    <p className="font-semibold text-slate-700">📍 Delivery Address:</p>
+                    <p className="mt-0.5 text-[11px] text-slate-600 leading-relaxed">
                       {address.full_address ||
                         address.address_line ||
                         [address.street, address.city, address.pincode]
                           .filter(Boolean)
                           .join(", ") ||
-                        "Address saved in record"}
+                        "Address saved in customer profile"}
                     </p>
                   </div>
                 )}
               </div>
-                            {/* Ordered Items with Thumbnails */}
+                 {/* Ordered Items with Weight (Kg) Breakdown */}
               {orderItems.length > 0 && (
-                <div className="bg-white rounded-lg border border-gray-200 p-3 mb-3 space-y-2">
-                  <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                    Ordered Items ({orderItems.length})
+                <div className="bg-white rounded-lg border border-slate-200 p-3 mb-3 space-y-2">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Packaged Items ({orderItems.length})
                   </p>
                   <div className="space-y-2">
                     {orderItems.map((item: any, idx: number) => {
@@ -237,40 +266,47 @@ export default function OrdersTable({
                       const price = Number(item.price || item.unit_price || 0);
                       const subtotal = (price * qty).toFixed(2);
 
+                      const p = item?.products || item?.product || {};
+                      const unitWeight = Number(p.weight || item.weight || 0);
+                      const totalWeight = unitWeight * qty;
+
                       return (
                         <div
                           key={item.id || idx}
-                          className="flex items-center justify-between gap-2 text-xs py-1 border-b border-gray-100 last:border-b-0"
+                          className="flex items-center justify-between gap-2 text-xs py-1 border-b border-slate-100 last:border-b-0"
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            {/* Product Thumbnail */}
                             {itemImg ? (
                               <img
                                 src={itemImg}
                                 alt={itemName}
-                                className="w-10 h-10 object-cover rounded-lg border border-gray-200 bg-white flex-shrink-0"
+                                className="w-9 h-9 object-cover rounded-md border border-slate-200 bg-white flex-shrink-0"
                                 onError={(e) => {
                                   (e.target as HTMLElement).style.display = "none";
                                 }}
                               />
                             ) : (
-                              <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-sm flex-shrink-0">
+                              <div className="w-9 h-9 bg-slate-100 rounded-md flex items-center justify-center text-sm flex-shrink-0">
                                 🛍️
                               </div>
                             )}
 
-                            {/* English Name & Quantity */}
                             <div className="min-w-0">
-                              <p className="font-semibold text-gray-800 truncate">
+                              <p className="font-semibold text-slate-800 text-xs truncate">
                                 {itemName}
                               </p>
-                              <p className="text-[11px] text-gray-500">
-                                ₹{price} × {qty}
-                              </p>
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                                <span>₹{price} × {qty}</span>
+                                {totalWeight > 0 && (
+                                  <span className="font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded">
+                                    {totalWeight.toFixed(2)} Kg
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
 
-                          <span className="font-bold text-gray-800 flex-shrink-0">
+                          <span className="font-bold text-slate-800 flex-shrink-0 text-xs">
                             ₹{subtotal}
                           </span>
                         </div>
@@ -281,73 +317,77 @@ export default function OrdersTable({
               )}
 
               {/* Amount Breakdown */}
-              <div className="bg-white rounded-lg border border-gray-200 p-3 mb-3">
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-gray-600 font-medium">Total</span>
-                  <span className="font-bold text-gray-800">
-                    ₹{o.total_amount}
-                  </span>
+              <div className="bg-slate-50 rounded-lg border border-slate-100 p-2.5 mb-3 text-xs">
+                <div className="flex justify-between font-semibold">
+                  <span className="text-slate-600">Total Bill</span>
+                  <span className="text-slate-900 font-bold">₹{o.total_amount}</span>
                 </div>
                 {o.payment_type === "partial" && (
-                  <>
-                    <div className="flex justify-between text-xs mt-1">
-                      <span className="text-green-700 font-medium">Advance</span>
-                      <span className="font-bold text-green-700">
-                        ₹{o.partial_payment_amount}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-xs mt-1">
-                      <span className="text-orange-700 font-medium">COD</span>
-                      <span className="font-bold text-orange-700">
-                        ₹{codAmount.toFixed(2)}
-                      </span>
-                    </div>
-                  </>
+                  <div className="flex justify-between pt-1 border-t border-slate-200/50 mt-1">
+                    <span className="text-emerald-700">Advance Paid: ₹{o.partial_payment_amount}</span>
+                    <span className="text-amber-700 font-bold">COD Due: ₹{codAmount.toFixed(2)}</span>
+                  </div>
                 )}
               </div>
 
-              {/* Delivery + Payment Type Row */}
-              <div className="flex items-center gap-2 mb-3 text-xs">
-                <span className="px-2 py-1 bg-gray-100 rounded-md font-medium text-gray-700">
-                  {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home"}
+              {/* Badges Row */}
+              <div className="flex flex-wrap items-center gap-1.5 mb-3 text-[11px]">
+                <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-medium">
+                  {o.delivery_type === "self_pickup" ? "🚶 Pickup" : "🏠 Home Delivery"}
                 </span>
-                <span className="px-2 py-1 bg-blue-50 rounded-md font-medium text-blue-700">
-                  {o.payment_type === "full" ? "Full" : "Advance"}
+                <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded font-medium">
+                  {o.payment_type === "full" ? "Full Payment" : "Advance Paid"}
                 </span>
                 <span
-                  className={`px-2 py-1 rounded-md font-medium ${
+                  className={`px-2 py-0.5 rounded font-semibold ${
                     o.payment_status === "success"
-                      ? "bg-green-100 text-green-700"
+                      ? "bg-emerald-50 text-emerald-700"
                       : o.payment_status === "pending"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : o.payment_status === "failed"
-                      ? "bg-red-100 text-red-700"
-                      : "bg-purple-100 text-purple-700"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-rose-50 text-rose-700"
                   }`}
                 >
-                  {o.payment_status}
+                  Payment: {o.payment_status}
                 </span>
               </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                <select
-                  value={o.order_status}
-                  onChange={(e) => onStatusChange(o, e.target.value)}
-                  className="flex-1 text-xs border border-gray-300 rounded-lg px-2 py-2 text-gray-900 font-medium bg-gray-50 outline-none"
-                >
-                  {STATUSES.map((s) => (
-                    <option key={s.value} value={s.value}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
+              {/* Action Controls */}
+              <div className="flex items-center gap-2 pt-3 border-t border-slate-100">
+                {/* Dynamic Safe Status Selector */}
+                {o.order_status !== "delivered" && o.order_status !== "refund" ? (
+                  <select
+                    value={o.order_status}
+                    onChange={(e) => onStatusChange(o, e.target.value)}
+                    className="flex-1 text-xs border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-800 font-semibold bg-white outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {allowedTransitions.map((s) => (
+                      <option key={s.value} value={s.value}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex-1">
+                    {o.order_status === "delivered" ? (
+                      <button
+                        onClick={() => onStatusChange(o, "refund")}
+                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs px-3 py-1.5 rounded-lg font-bold transition flex items-center gap-1.5"
+                      >
+                        🔄 Initiate Refund
+                      </button>
+                    ) : (
+                      <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2.5 py-1 rounded-md border border-rose-200">
+                        Refund Processed
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {canPrint && (
                   <button
                     onClick={() => onDownload(o)}
                     disabled={generatingLabel}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3.5 py-2 rounded-lg font-medium disabled:opacity-50 flex items-center gap-1 transition"
+                    className="bg-slate-800 hover:bg-slate-900 text-white text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 flex items-center gap-1 transition shadow-xs"
                     title="Download Label"
                   >
                     📥 Label
@@ -357,7 +397,8 @@ export default function OrdersTable({
                 {o.order_status === "spam" && (
                   <button
                     onClick={() => onDelete(o)}
-                    className="bg-red-600 hover:bg-red-700 text-white text-xs px-3 py-2 rounded-lg font-medium transition"
+                    className="bg-rose-600 hover:bg-rose-700 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition"
+                    title="Permanently Delete"
                   >
                     🗑️
                   </button>
@@ -370,5 +411,3 @@ export default function OrdersTable({
     </div>
   );
 }
-
-              
