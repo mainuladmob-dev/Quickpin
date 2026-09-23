@@ -20,7 +20,7 @@ const STATUSES = [
 ];
 
 const ORDER_TYPES = [
-  { value: "all", label: "সব Order", filter: null },
+  { value: "all", label: "All Orders", filter: null },
   {
     value: "full_home",
     label: "Full + Home",
@@ -43,19 +43,48 @@ const ORDER_TYPES = [
   },
 ];
 
-// পণ্যের সঠিক বাংলা নাম পাওয়ার হেল্পার
+// Helper: 100% English Item Name Resolver
 function resolveItemName(item: any): string {
   const p = item?.products || item?.product || {};
   return (
-    p.name_bn ||
-    item.name_bn ||
+    p.name_en ||
+    item.name_en ||
     p.name ||
     item.name ||
     item.product_name ||
     p.title ||
     item.title ||
-    "আইটেম"
+    p.name_bn ||
+    item.name_bn ||
+    "Product Item"
   );
+}
+
+// Helper: Ensure all order items have English names for PDF & Print Engine
+function formatOrdersForPrint(orderList: Order[]): Order[] {
+  return orderList.map((o) => {
+    const rawItems = Array.isArray(o.order_items)
+      ? o.order_items
+      : Array.isArray(o.items)
+      ? o.items
+      : [];
+
+    const mappedItems = rawItems.map((it: any) => {
+      const englishName = resolveItemName(it);
+      return {
+        ...it,
+        name: englishName,
+        product_name: englishName,
+        title: englishName,
+      };
+    });
+
+    return {
+      ...o,
+      order_items: mappedItems,
+      items: mappedItems,
+    };
+  });
 }
 
 export default function AdminOrdersPage() {
@@ -75,8 +104,9 @@ export default function AdminOrdersPage() {
   const [savingRefund, setSavingRefund] = useState(false);
   const [generatingLabel, setGeneratingLabel] = useState(false);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [printedOrderIds, setPrintedOrderIds] = useState<string[]>([]);
 
-  // ১. সম্পূর্ণ ডেটা রিলেশন ও তারিখ অনুযায়ী ফেচিং
+  // 1. Fetch Orders with Deep Relations & Date Filter
   const fetchOrders = async () => {
     setLoading(true);
     let query = supabase
@@ -93,7 +123,6 @@ export default function AdminOrdersPage() {
         .eq("payment_type", orderType.filter.payment_type);
     }
 
-    // নির্দিষ্ট তারিখ ফিল্টার লজিক
     if (selectedDate) {
       const start = new Date(selectedDate);
       start.setHours(0, 0, 0, 0);
@@ -107,9 +136,9 @@ export default function AdminOrdersPage() {
     const { data, error } = await query;
     let orderList = (data as any) || [];
 
-    // ব্যাকআপ ফেচিং (যদি রিলেশনে কোনো সমস্যা হয়)
+    // Fallback if join relation schema is missing
     if (error) {
-      console.warn("Deep join fallback triggered:", error.message);
+      console.warn("Fallback query triggered:", error.message);
       let fallbackQuery = supabase
         .from("orders")
         .select("*, order_items(*)")
@@ -125,7 +154,6 @@ export default function AdminOrdersPage() {
       orderList = fallbackData || [];
     }
 
-    // ইউজার প্রোফাইল ম্যাপিং
     const userIds = [
       ...new Set(orderList.map((o: any) => o.user_id).filter(Boolean)),
     ];
@@ -156,7 +184,7 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
 
-  // ২. নির্বাচিত তারিখ/অর্ডারের সামগ্রিক আইটেম ও ওজন এগ্রিগেশন (বাজার তালিকা)
+  // 2. Master Item Picklist Summary (100% English Aggregation)
   const itemSummary = useMemo(() => {
     const summaryMap: Record<
       string,
@@ -191,6 +219,7 @@ export default function AdminOrdersPage() {
     return Object.values(summaryMap);
   }, [orders]);
 
+  // 3. Status Change Logic (Preserving Original Payment Verifications)
   const changeStatus = async (
     orderId: string,
     newStatus: string,
@@ -245,7 +274,7 @@ export default function AdminOrdersPage() {
     if (!bulkStatus) return alert("Select a status first");
     if (selected.length === 0) return alert("Select at least one order");
     if (bulkStatus === "refund")
-      return alert("Refund must be done one order at a time.");
+      return alert("Refund must be processed one order at a time.");
     if (!confirm(`Change ${selected.length} orders to "${bulkStatus}"?`)) return;
 
     for (const id of selected) await changeStatus(id, bulkStatus);
@@ -266,9 +295,9 @@ export default function AdminOrdersPage() {
     const spamSelected = orders.filter(
       (o) => selected.includes(o.id) && o.order_status === "spam"
     );
-    if (spamSelected.length === 0) return alert("Only spam can be deleted.");
+    if (spamSelected.length === 0) return alert("Only spam orders can be deleted.");
     if (spamSelected.length !== selected.length)
-      return alert("Some selected orders are not spam.");
+      return alert("Some selected orders are not marked as spam.");
     if (!confirm(`Delete ${spamSelected.length} spam orders?`)) return;
 
     for (const o of spamSelected) {
@@ -302,54 +331,75 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // যেকোনো স্ট্যাটাসের অর্ডারে লেবেল প্রিন্ট/ডাউনলোডের অনুমোদন
+  // Universal Label Permission
   const canPrintLabel = (order: Order) => Boolean(order);
 
+  // Single Download (Unrestricted Reprint Allowed)
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
     setGeneratingLabel(true);
     try {
-      await generateLabelPDF([order], `label-${order.order_number}.pdf`);
+      const formatted = formatOrdersForPrint([order]);
+      await generateLabelPDF(formatted, `label-${order.order_number}.pdf`);
+      setPrintedOrderIds((prev) => [...new Set([...prev, order.id])]);
+      try {
+        await supabase.from("orders").update({ is_printed: true } as any).eq("id", order.id);
+      } catch {}
     } catch (err: any) {
       alert("Label failed: " + err.message);
     }
     setGeneratingLabel(false);
   };
 
-  const handleBulkDownload = async () => {
-    const validOrders = orders.filter(
-      (o) => selected.includes(o.id) && canPrintLabel(o)
-    );
-    if (validOrders.length === 0) return alert("No printable orders selected");
-    setGeneratingLabel(true);
-    try {
-      await generateLabelPDF(
-        validOrders,
-        `labels-bulk-${validOrders.length}.pdf`
-      );
-    } catch (err: any) {
-      alert("Bulk label failed: " + err.message);
-    }
-    setGeneratingLabel(false);
-  };
-
-  const handleBulkPrint = async () => {
+  // Bulk Print & Download Guard (Excludes previously printed orders to prevent double-packing)
+  const executeBulkPrint = async (isDownload: boolean) => {
     const validOrders = orders.filter(
       (o) => selected.includes(o.id) && canPrintLabel(o)
     );
     if (validOrders.length === 0) return alert("No printable orders selected");
 
+    // Check printed status
+    const unprintedOrders = validOrders.filter(
+      (o) => !printedOrderIds.includes(o.id) && !o.is_printed
+    );
+
+    let ordersToProcess = unprintedOrders;
+
+    if (unprintedOrders.length === 0) {
+      const forceReprint = confirm(
+        "All selected orders were already printed once. Do you want to re-print them all?"
+      );
+      if (!forceReprint) return;
+      ordersToProcess = validOrders;
+    } else if (unprintedOrders.length < validOrders.length) {
+      alert(
+        `Notice: ${validOrders.length - unprintedOrders.length} order(s) were already printed previously and are excluded to avoid duplicate packaging. Printing ${unprintedOrders.length} new order(s).`
+      );
+    }
+
     setGeneratingLabel(true);
     try {
-      await generateLabelPDF(
-        validOrders,
-        `labels-bulk-${validOrders.length}.pdf`
-      );
+      const formatted = formatOrdersForPrint(ordersToProcess);
+      const filename = `labels-bulk-${ordersToProcess.length}.pdf`;
+      await generateLabelPDF(formatted, filename);
+
+      const newlyPrintedIds = ordersToProcess.map((o) => o.id);
+      setPrintedOrderIds((prev) => [...new Set([...prev, ...newlyPrintedIds])]);
+
+      try {
+        await supabase
+          .from("orders")
+          .update({ is_printed: true } as any)
+          .in("id", newlyPrintedIds);
+      } catch {}
     } catch (err: any) {
-      alert("Bulk print failed: " + err.message);
+      alert((isDownload ? "Bulk download" : "Bulk print") + " failed: " + err.message);
     }
     setGeneratingLabel(false);
   };
+
+  const handleBulkDownload = () => executeBulkPrint(true);
+  const handleBulkPrint = () => executeBulkPrint(false);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) =>
@@ -370,18 +420,22 @@ export default function AdminOrdersPage() {
 
   return (
     <div>
+      {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-2xl font-bold text-gray-800">Orders</h1>
         <button
           onClick={() => setShowSummaryModal(true)}
           className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 shadow-sm transition"
         >
-          📋 বাজার তালিকা / আইটেম হিসাব ({itemSummary.length})
+          📋 Master Item Picklist ({itemSummary.length})
         </button>
       </div>
 
+      {/* ORDER TYPE */}
       <div className="mb-4">
-        <p className="text-xs text-gray-500 font-medium mb-2">ORDER TYPE</p>
+        <p className="text-xs text-gray-500 font-medium mb-2 uppercase tracking-wide">
+          Order Type
+        </p>
         <div className="flex flex-wrap gap-2">
           {ORDER_TYPES.map((t) => (
             <button
@@ -389,7 +443,7 @@ export default function AdminOrdersPage() {
               onClick={() => setActiveOrderType(t.value)}
               className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
                 activeOrderType === t.value
-                  ? "bg-purple-600 text-white"
+                  ? "bg-purple-600 text-white shadow-sm"
                   : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
               }`}
             >
@@ -399,14 +453,17 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
+      {/* ORDER STATUS */}
       <div className="mb-4">
-        <p className="text-xs text-gray-500 font-medium mb-2">ORDER STATUS</p>
+        <p className="text-xs text-gray-500 font-medium mb-2 uppercase tracking-wide">
+          Order Status
+        </p>
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setActiveTab("all")}
             className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
               activeTab === "all"
-                ? "bg-blue-600 text-white"
+                ? "bg-blue-600 text-white shadow-sm"
                 : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
             }`}
           >
@@ -418,7 +475,7 @@ export default function AdminOrdersPage() {
               onClick={() => setActiveTab(s.value)}
               className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
                 activeTab === s.value
-                  ? "bg-blue-600 text-white"
+                  ? "bg-blue-600 text-white shadow-sm"
                   : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
               }`}
             >
@@ -428,10 +485,10 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
-      {/* তারিখ ফিল্টার বার */}
+      {/* Date Filter Bar */}
       <div className="bg-white p-3 rounded-xl border border-gray-200 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-gray-600">তারিখ ফিল্টার:</span>
+          <span className="text-xs font-semibold text-gray-600">Filter by Date:</span>
           <input
             type="date"
             value={selectedDate}
@@ -443,15 +500,16 @@ export default function AdminOrdersPage() {
               onClick={() => setSelectedDate("")}
               className="text-xs text-red-600 font-medium hover:underline ml-1"
             >
-              সব তারিখ দেখুন
+              View All Dates
             </button>
           )}
         </div>
         <p className="text-xs text-gray-500">
-          মোট অর্ডার: <span className="font-bold text-gray-800">{orders.length}</span>
+          Total Orders: <span className="font-bold text-gray-800">{orders.length}</span>
         </p>
       </div>
 
+      {/* Bulk Action Controls */}
       {selected.length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4 flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium text-blue-800">
@@ -460,7 +518,7 @@ export default function AdminOrdersPage() {
           <select
             value={bulkStatus}
             onChange={(e) => setBulkStatus(e.target.value)}
-            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-900"
+            className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-900 bg-white"
           >
             <option value="">Move to...</option>
             {STATUSES.map((s) => (
@@ -506,8 +564,9 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
+      {/* Orders List View */}
       {loading ? (
-        <p className="text-gray-500 py-6">Loading...</p>
+        <p className="text-gray-500 py-6">Loading orders...</p>
       ) : orders.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-500">
           No orders found for this filter.
@@ -527,73 +586,15 @@ export default function AdminOrdersPage() {
         />
       )}
 
-      {/* 📋 বাজার তালিকা / আইটেম সামারি মোডাল */}
+      {/* 📋 Master Item Picklist Modal (100% English) */}
       {showSummaryModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center pb-3 border-b mb-3">
               <div>
-                <h3 className="font-bold text-gray-900 text-base">📋 সামগ্রিক বাজার তালিকা</h3>
+                <h3 className="font-bold text-gray-900 text-base">📋 Master Item Picklist</h3>
                 <p className="text-xs text-gray-500">
-                  {selectedDate ? `তারিখ: ${selectedDate}` : "বর্তমান ফিল্টারের সমস্ত অর্ডারের হিসাব"} ({orders.length}টি অর্ডারে)
+                  {selectedDate ? `Date: ${selectedDate}` : "Consolidated requirements across current filter"} ({orders.length} orders)
                 </p>
               </div>
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="overflow-y-auto flex-1 pr-1 space-y-2">
-              {itemSummary.length === 0 ? (
-                <p className="text-xs text-gray-500 text-center py-6">কোনো আইটেম পাওয়া যায়নি</p>
-              ) : (
-                itemSummary.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-2.5 bg-gray-50 rounded-lg text-xs">
-                    <div>
-                      <p className="font-bold text-gray-800 text-sm">{item.name}</p>
-                      <p className="text-gray-500 text-[11px]">{item.orderCount}টি অর্ডারে রয়েছে</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
-                        মোট: {item.totalQty} ইউনিট/কেজি
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="pt-3 border-t mt-3 flex justify-end">
-              <button
-                onClick={() => setShowSummaryModal(false)}
-                className="px-4 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
-              >
-                বন্ধ করুন
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {viewingOrder && (
-        <OrderDetailModal
-          order={viewingOrder}
-          onClose={() => setViewingOrder(null)}
-        />
-      )}
-
-      {refundOrder && (
-        <RefundModal
-          order={refundOrder}
-          onClose={() => setRefundOrder(null)}
-          onSubmit={submitRefund}
-          saving={savingRefund}
-        />
-      )}
-    </div>
-  );
-        }
-        
+   
