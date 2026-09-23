@@ -184,11 +184,17 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
 
-  // 2. Master Item Picklist Summary (100% English Aggregation)
+    // 2. Master Item Picklist Summary (Units + Total Kg Aggregation)
   const itemSummary = useMemo(() => {
     const summaryMap: Record<
       string,
-      { name: string; totalQty: number; orderCount: number; unitPrice: number }
+      {
+        name: string;
+        totalQty: number;
+        totalWeight: number;
+        orderCount: number;
+        unitPrice: number;
+      }
     > = {};
 
     orders.forEach((o) => {
@@ -202,22 +208,29 @@ export default function AdminOrdersPage() {
         const name = resolveItemName(item);
         const qty = Number(item.quantity || item.qty || item.count || 1);
         const price = Number(item.price || item.unit_price || 0);
+        
+        // Products টেবিল থেকে ওজন নিয়ে আসা
+        const p = item?.products || item?.product || {};
+        const unitWeight = Number(p.weight || item.weight || 0);
 
         if (!summaryMap[name]) {
           summaryMap[name] = {
             name,
             totalQty: 0,
+            totalWeight: 0,
             orderCount: 0,
             unitPrice: price,
           };
         }
         summaryMap[name].totalQty += qty;
+        summaryMap[name].totalWeight += qty * unitWeight; // মোট ওজন = ইউনিট × প্রতিটির ওজন
         summaryMap[name].orderCount += 1;
       });
     });
 
     return Object.values(summaryMap);
   }, [orders]);
+  
 
   // 3. Status Change Logic (Preserving Original Payment Verifications)
   const changeStatus = async (
