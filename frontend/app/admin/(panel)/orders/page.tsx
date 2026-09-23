@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import OrderDetailModal from "./OrderDetailModal";
@@ -133,7 +133,7 @@ export default function AdminOrdersPage() {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true);
     let query = supabase
       .from("orders")
@@ -203,11 +203,11 @@ export default function AdminOrdersPage() {
     setOrders(enriched);
     setSelected([]);
     setLoading(false);
-  };
+  }, [activeTab, activeOrderType, selectedDate, supabase]);
 
   useEffect(() => {
     fetchOrders();
-  }, [activeTab, activeOrderType, selectedDate]);
+  }, [fetchOrders]);
 
   const financialStats = useMemo(() => {
     let grossDelivered = 0;
@@ -880,5 +880,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-      }
-          
+        }
+    
