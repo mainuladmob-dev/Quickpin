@@ -18,6 +18,9 @@ type OrderItem = {
   price?: number;
   unit_price?: number;
   image?: string;
+  image_url?: string;
+  product?: any;
+  products?: any;
   [key: string]: any;
 };
 
@@ -94,36 +97,34 @@ export default function MyOrdersPage() {
 
       let fetchedOrders: any[] = [];
 
-      // ১. প্রথমে সব কলাম সহ ফেচ করার চেষ্টা করবে
-      const { data: allData, error: allError } = await supabase
+      // ১. মূল প্রোডাক্ট টেবিলের নাম ও ছবি সহ ফেচ করার চেষ্টা
+      const { data: deepData, error: deepError } = await supabase
         .from("orders")
-        .select("*, order_items(*)")
+        .select("*, order_items(*, products(*))")
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (!allError && allData) {
-        fetchedOrders = allData;
+      if (!deepError && deepData) {
+        fetchedOrders = deepData;
       } else {
-        // ২. যদি রিলেশন না থাকে, তবে orders টেবিলের সমস্ত ডেটা সরাসরি আনবে
-        const { data: fallbackData, error: fallbackError } = await supabase
+        // ২. যদি রিলেশনে নাম ভিন্ন হয়, তবে সাধারণ order_items সহ ফেচ
+        const { data: itemData, error: itemError } = await supabase
           .from("orders")
-          .select("*")
+          .select("*, order_items(*)")
           .eq("user_id", user.id)
           .order("created_at", { ascending: false });
 
-        if (!fallbackError && fallbackData) {
-          fetchedOrders = fallbackData;
+        if (!itemError && itemData) {
+          fetchedOrders = itemData;
         } else {
-          // ৩. নিরাপদ ব্যাকআপ: আপনার পুরোনো অরিজিনাল কুয়েরি
-          const { data: originalData } = await supabase
+          // ৩. ব্যাকআপ কুয়েরি (সাইট যেন কোনো অবস্থাতেই ক্র্যাশ না করে)
+          const { data: fallbackData } = await supabase
             .from("orders")
-            .select(
-              "id, order_number, delivery_type, payment_type, total_amount, paid_amount, remaining_amount, partial_payment_amount, payment_status, order_status, refund_reason, refund_amount, created_at"
-            )
+            .select("*")
             .eq("user_id", user.id)
             .order("created_at", { ascending: false });
 
-          fetchedOrders = originalData || [];
+          fetchedOrders = fallbackData || [];
         }
       }
 
@@ -244,7 +245,7 @@ export default function MyOrdersPage() {
               const isPartialAdvancePaid =
                 o.payment_type === "partial" && (o.paid_amount || 0) > 0;
 
-              // প্রোডাক্ট আইটেম বের করার নিরাপদ লজিক
+              // প্রোডাক্ট আইটেম বের করার লজিক
               let orderItems: any[] = [];
               if (Array.isArray(o.items)) {
                 orderItems = o.items;
@@ -308,40 +309,73 @@ export default function MyOrdersPage() {
                     </div>
                   </div>
 
-                  {/* অর্ডার করা প্রোডাক্টের তালিকা */}
+                  {/* ✅ ছবি, নাম ও প্রাইস ব্রেকডাউন সহ আইটেম সেকশন */}
                   {orderItems.length > 0 && (
-                    <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2">
+                    <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2.5">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                         {lang === "bn" ? "অর্ডার করা আইটেম" : "Ordered Items"}
                       </p>
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         {orderItems.map((item: any, idx: number) => {
+                          const relProduct = item.products || item.product || {};
+                          
                           const itemName =
                             item.name ||
                             item.product_name ||
+                            relProduct.name ||
+                            relProduct.title ||
+                            relProduct.name_bn ||
+                            relProduct.name_en ||
                             item.title ||
-                            item.product?.name ||
-                            item.product?.title ||
                             "Item";
+
+                          const itemImage =
+                            item.image ||
+                            item.image_url ||
+                            relProduct.image ||
+                            relProduct.image_url ||
+                            relProduct.thumbnail ||
+                            relProduct.photo ||
+                            null;
+
                           const itemQty =
                             item.quantity || item.qty || item.count || 1;
                           const itemPrice = item.price || item.unit_price || 0;
+                          const itemTotal = (itemPrice * itemQty).toFixed(2);
 
                           return (
                             <div
                               key={item.id || idx}
-                              className="flex items-center justify-between text-sm"
+                              className="flex items-center justify-between gap-3 text-sm"
                             >
-                              <div className="flex items-center gap-2">
-                                <span className="text-gray-800 font-medium">
-                                  {itemName}
-                                </span>
-                                <span className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
-                                  ×{itemQty}
-                                </span>
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                {/* থাম্বনেইল ছবি */}
+                                {itemImage ? (
+                                  <img
+                                    src={itemImage}
+                                    alt={itemName}
+                                    className="w-10 h-10 object-cover rounded-lg border border-gray-100 flex-shrink-0"
+                                  />
+                                ) : (
+                                  <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-base flex-shrink-0">
+                                    🛍️
+                                  </div>
+                                )}
+
+                                {/* নাম ও পরিমাণ */}
+                                <div className="min-w-0">
+                                  <p className="text-gray-800 font-medium truncate">
+                                    {itemName}
+                                  </p>
+                                  <p className="text-xs text-gray-500">
+                                    ₹{itemPrice} × {itemQty}
+                                  </p>
+                                </div>
                               </div>
-                              <span className="text-gray-700 font-medium">
-                                ₹{(itemPrice * itemQty).toFixed(2)}
+
+                              {/* আইটেম সাবটোটাল */}
+                              <span className="text-gray-800 font-semibold flex-shrink-0">
+                                ₹{itemTotal}
                               </span>
                             </div>
                           );
@@ -441,5 +475,5 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-    }
-            
+                        }
+                    
