@@ -7,7 +7,6 @@ import { useLanguage } from "@/lib/i18n/LanguageContext";
 import { useUser } from "@/lib/auth/useUser";
 import UserMenu from "@/components/UserMenu";
 
-// ✅ ১. প্রোডাক্ট আইটেমের টাইপ যোগ করা হলো
 type OrderItem = {
   id?: string;
   name?: string;
@@ -32,7 +31,7 @@ type Order = {
   refund_reason: string | null;
   refund_amount: number | null;
   created_at: string;
-  items?: OrderItem[] | null; // ✅ নতুন ফিল্ড
+  items?: OrderItem[] | null;
 };
 
 const STATUS_LABELS: Record<
@@ -87,7 +86,6 @@ export default function MyOrdersPage() {
         return;
       }
 
-      // ✅ ২. ডিফেন্সিভ কুয়েরি লজিক: প্রথমে items সহ চেষ্টা করবে
       let { data, error } = await supabase
         .from("orders")
         .select(
@@ -96,7 +94,6 @@ export default function MyOrdersPage() {
         .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      // যদি ডেটাবেজে items কলাম সরাসরি না থাকে, তবে আগের স্টাইলে ফেচ করবে যাতে পেজ কখনো ফাঁকা বা ক্র্যাশ না হয়
       if (error) {
         const fallback = await supabase
           .from("orders")
@@ -275,7 +272,7 @@ export default function MyOrdersPage() {
                     </div>
                   </div>
 
-                  {/* ✅ ৩. প্রোডাক্টের তালিকা দেখানোর নতুন সেকশন */}
+                  {/* প্রোডাক্টের তালিকা */}
                   {o.items && Array.isArray(o.items) && o.items.length > 0 && (
                     <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2">
                       <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
@@ -351,7 +348,6 @@ export default function MyOrdersPage() {
                     </div>
                   )}
 
-                  {/* Payment Button / COD Info */}
                   {(o.paid_amount || 0) < o.total_amount && (
                     <>
                       {isPartialAdvancePaid ? (
@@ -380,7 +376,6 @@ export default function MyOrdersPage() {
                     </>
                   )}
 
-                  {/* Fully paid indicator */}
                   {(o.paid_amount || 0) >= o.total_amount &&
                     o.payment_status === "success" && (
                       <div className="block w-full text-center bg-green-50 border border-green-200 text-green-700 font-medium py-2.5 rounded-lg text-sm">
@@ -395,5 +390,5 @@ export default function MyOrdersPage() {
       </div>
     </div>
   );
-              }
-                              
+                  }
+
