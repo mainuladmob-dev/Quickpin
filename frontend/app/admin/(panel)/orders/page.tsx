@@ -351,14 +351,13 @@ export default function AdminOrdersPage() {
     setGeneratingLabel(false);
   };
 
-  // Bulk Print & Download Guard (Excludes previously printed orders to prevent double-packing)
+  // Bulk Print & Download Guard (Excludes previously printed orders to prevent double-packaging)
   const executeBulkPrint = async (isDownload: boolean) => {
     const validOrders = orders.filter(
       (o) => selected.includes(o.id) && canPrintLabel(o)
     );
     if (validOrders.length === 0) return alert("No printable orders selected");
 
-    // Check printed status
     const unprintedOrders = validOrders.filter(
       (o) => !printedOrderIds.includes(o.id) && !o.is_printed
     );
@@ -417,8 +416,7 @@ export default function AdminOrdersPage() {
     orders
       .filter((o) => selected.includes(o.id))
       .every((o) => o.order_status === "spam");
-
-  return (
+     return (
     <div>
       {/* Header Bar */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -597,4 +595,63 @@ export default function AdminOrdersPage() {
                   {selectedDate ? `Date: ${selectedDate}` : "Consolidated requirements across current filter"} ({orders.length} orders)
                 </p>
               </div>
-   
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 pr-1 space-y-2">
+              {itemSummary.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-6">No items found</p>
+              ) : (
+                itemSummary.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-2.5 bg-gray-50 rounded-lg text-xs">
+                    <div>
+                      <p className="font-bold text-gray-800 text-sm">{item.name}</p>
+                      <p className="text-gray-500 text-[11px]">Requested in {item.orderCount} order(s)</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                        Total: {item.totalQty} Units / Kg
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t mt-3 flex justify-end">
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="px-4 py-1.5 text-xs text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
+      {viewingOrder && (
+        <OrderDetailModal
+          order={viewingOrder}
+          onClose={() => setViewingOrder(null)}
+        />
+      )}
+
+      {refundOrder && (
+        <RefundModal
+          order={refundOrder}
+          onClose={() => setRefundOrder(null)}
+          onSubmit={submitRefund}
+          saving={savingRefund}
+        />
+      )}
+    </div>
+  );
+          }
+              
