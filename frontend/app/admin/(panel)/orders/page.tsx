@@ -208,8 +208,7 @@ export default function AdminOrdersPage() {
   useEffect(() => {
     fetchOrders();
   }, [activeTab, activeOrderType, selectedDate]);
-
-  // Automated Financial Engine
+        // 100% Automated Financial Engine (Delivered & Refund keep Gross intact)
   const financialStats = useMemo(() => {
     let grossDelivered = 0;
     let totalRefunded = 0;
@@ -285,7 +284,7 @@ export default function AdminOrdersPage() {
 
     return Object.values(summaryMap);
   }, [orders]);
-      // 4. Strict State Transition Logic & Spam Guard Rules
+
   const changeStatus = async (
     orderId: string,
     newStatus: string,
@@ -294,21 +293,18 @@ export default function AdminOrdersPage() {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return false;
 
-    // Current Order ebong Out for Delivery kokhono Spam-e jabe na
     if (newStatus === "spam") {
       if (order.order_status === "current" || order.order_status === "out_for_delivery") {
-        alert("Action Blocked: 'Current Order' (in packing) and 'Out for Delivery' orders cannot be moved to Spam.");
+        alert("Action Blocked: 'Current Order' and 'Out for Delivery' orders cannot be moved to Spam.");
         return false;
       }
     }
 
-    // Pending orders can ONLY move to 'current' or 'spam'
     if (order.order_status === "pending" && !["current", "spam"].includes(newStatus)) {
       alert("Action Blocked: Pending orders can only be moved to 'Current Order' or 'Spam'.");
       return false;
     }
 
-    // Refund strictly locked unless Delivered
     if (newStatus === "refund" && order.order_status !== "delivered") {
       alert("Action Blocked: Refunds can only be initiated on 'Delivered' orders.");
       return false;
@@ -333,7 +329,10 @@ export default function AdminOrdersPage() {
       updates.remaining_amount = order.total_amount - paidAmount;
     } else if (newStatus === "refund") {
       updates.payment_status = "refunded";
-      updates.refund_status = extra?.transaction_ref ? "success" : "pending";
+      // Defaults to pending unless explicitly marked
+      if (!updates.refund_status) {
+        updates.refund_status = extra?.transaction_ref ? "success" : "pending";
+      }
     } else if (newStatus === "spam") {
       updates.payment_status = "failed";
     }
@@ -362,6 +361,92 @@ export default function AdminOrdersPage() {
 
     const ok = await changeStatus(order.id, newStatus);
     if (ok) fetchOrders();
+  };
+
+  // Step 2: Refund ট্যাবে থাকা অর্ডারের পেমেন্ট পাঠানো শেষ হলে এক ক্লিকে "Mark Done" করা
+  const handleMarkRefundDone = async (order: Order) => {
+    const inputRef = prompt(
+      `Mark Refund of ₹${order.refund_amount || order.total_amount} as Paid/Done?\n\nEnter Bank Ref / UTR (Optional, or press OK if Cash):`
+    );
+    if (inputRef === null) return; // User cancelled
+
+    const updates: any = {
+      refund_status: "success",
+      status_changed_at: new Date().toISOString(),
+    };
+
+    if (inputRef.trim()) {
+      updates.transaction_ref = inputRef.trim();
+    }
+
+    const { error } = await supabase
+      .from("orders")
+      .update(updates)
+      .eq("id", order.id);
+
+    if (error) {
+      alert("Update failed: " + error.message);
+      return;
+    }
+
+    fetchOrders();
+  };
+
+  // Step 1: Delivered অর্ডার থেকে রিফান্ড তৈরি করা (স্বয়ংক্রিয়ভাবে Pending স্ট্যাটাস নিয়ে Refund ট্যাবে যাবে)
+  const submitRefund = async (data: {
+    reason: string;
+    amount: number;
+    method: string;
+    note: string;
+    product_name?: string;
+    transaction_ref?: string;
+    customer_upi?: string;
+  }) => {
+    if (!refundOrder) return;
+    setSavingRefund(true);
+
+    try {
+      await supabase.from("refunds").insert({
+        order_id: refundOrder.id,
+        product_name: data.product_name || "Granular Item Refund",
+        amount: data.amount,
+        refund_method: data.method.toLowerCase(),
+        reason: data.reason || "rotten",
+        customer_upi: data.customer_upi || refundOrder.customer_upi || null,
+        transaction_ref: data.transaction_ref || null,
+        refunded_at: new Date().toISOString(),
+      });
+    } catch (e) {
+      console.warn("Audit log note:", e);
+    }
+
+    if (refundOrder.user_id && data.customer_upi) {
+      try {
+        await supabase
+          .from("profiles")
+          .update({ upi_id: data.customer_upi })
+          .eq("id", refundOrder.user_id);
+      } catch {}
+    }
+
+    const isImmediateSuccess = Boolean(data.transaction_ref);
+
+    const ok = await changeStatus(refundOrder.id, "refund", {
+      refund_reason: data.reason,
+      refund_amount: data.amount,
+      refund_method: data.method,
+      refund_note: data.note || null,
+      transaction_ref: data.transaction_ref || null,
+      customer_upi: data.customer_upi || refundOrder.customer_upi || null,
+      refund_status: isImmediateSuccess ? "success" : "pending",
+      refunded_at: new Date().toISOString(),
+    });
+
+    setSavingRefund(false);
+    if (ok) {
+      setRefundOrder(null);
+      fetchOrders();
+    }
   };
 
   const handleBulkStatus = async () => {
@@ -395,7 +480,7 @@ export default function AdminOrdersPage() {
     }
     if (
       !confirm(
-        `Delete spam order #${order.order_number}?\n\nNote: Customer profile, phone number, and address records will remain permanently saved in the system for fraud tracking.`
+        `Delete spam order #${order.order_number}?\n\nCustomer profile history and addresses will remain safely kept.`
       )
     )
       return;
@@ -413,72 +498,13 @@ export default function AdminOrdersPage() {
     if (spamSelected.length !== selected.length) {
       return alert("Some selected orders are not marked as spam.");
     }
-    if (
-      !confirm(
-        `Permanently delete ${spamSelected.length} spam orders?\n\nCustomer profile history, phone numbers, and addresses will remain safely kept in database.`
-      )
-    )
-      return;
+    if (!confirm(`Permanently delete ${spamSelected.length} spam orders?`)) return;
 
     for (const o of spamSelected) {
       await supabase.from("orders").delete().eq("id", o.id);
     }
     setSelected([]);
     fetchOrders();
-  };
-
-  const submitRefund = async (data: {
-    reason: string;
-    amount: number;
-    method: string;
-    note: string;
-    product_name?: string;
-    transaction_ref?: string;
-    customer_upi?: string;
-  }) => {
-    if (!refundOrder) return;
-    setSavingRefund(true);
-
-    try {
-      await supabase.from("refunds").insert({
-        order_id: refundOrder.id,
-        product_name: data.product_name || "Granular Item Refund",
-        amount: data.amount,
-        refund_method: data.method.toLowerCase(),
-        reason: data.reason || "rotten",
-        customer_upi: data.customer_upi || refundOrder.customer_upi || null,
-        transaction_ref: data.transaction_ref || null,
-        refunded_at: new Date().toISOString(),
-      });
-    } catch (e) {
-      console.warn("Audit table log note:", e);
-    }
-
-    if (refundOrder.user_id && data.customer_upi) {
-      try {
-        await supabase
-          .from("profiles")
-          .update({ upi_id: data.customer_upi })
-          .eq("id", refundOrder.user_id);
-      } catch {}
-    }
-
-    const ok = await changeStatus(refundOrder.id, "refund", {
-      refund_reason: data.reason,
-      refund_amount: data.amount,
-      refund_method: data.method,
-      refund_note: data.note || null,
-      transaction_ref: data.transaction_ref || null,
-      customer_upi: data.customer_upi || refundOrder.customer_upi || null,
-      refund_status: data.transaction_ref ? "success" : "pending",
-      refunded_at: new Date().toISOString(),
-    });
-
-    setSavingRefund(false);
-    if (ok) {
-      setRefundOrder(null);
-      fetchOrders();
-    }
   };
 
   const canPrintLabel = (order: Order) => Boolean(order);
@@ -517,10 +543,6 @@ export default function AdminOrdersPage() {
       );
       if (!forceReprint) return;
       ordersToProcess = validOrders;
-    } else if (unprintedOrders.length < validOrders.length) {
-      alert(
-        `Notice: ${validOrders.length - unprintedOrders.length} order(s) were already printed previously. Printing ${unprintedOrders.length} new order(s).`
-      );
     }
 
     setGeneratingLabel(true);
@@ -563,8 +585,7 @@ export default function AdminOrdersPage() {
     orders
       .filter((o) => selected.includes(o.id))
       .every((o) => o.order_status === "spam");
-        
-  return (
+       return (
     <div className="space-y-4">
       {/* 1. Operating Date Bar */}
       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
@@ -782,6 +803,7 @@ export default function AdminOrdersPage() {
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           onStatusChange={handleSingleStatus}
+          onMarkRefundDone={handleMarkRefundDone}
           onDelete={handleDelete}
           onView={(o) => setViewingOrder(o)}
           onDownload={handleSingleDownload}
@@ -861,4 +883,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-                  }
+            }
+        
