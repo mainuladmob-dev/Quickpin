@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import OrderDetailModal from "./OrderDetailModal";
@@ -43,6 +43,21 @@ const ORDER_TYPES = [
   },
 ];
 
+// পণ্যের সঠিক বাংলা নাম পাওয়ার হেল্পার
+function resolveItemName(item: any): string {
+  const p = item?.products || item?.product || {};
+  return (
+    p.name_bn ||
+    item.name_bn ||
+    p.name ||
+    item.name ||
+    item.product_name ||
+    p.title ||
+    item.title ||
+    "আইটেম"
+  );
+}
+
 export default function AdminOrdersPage() {
   const supabase = createClient();
   const searchParams = useSearchParams();
@@ -52,18 +67,21 @@ export default function AdminOrdersPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(initialStatus);
   const [activeOrderType, setActiveOrderType] = useState("all");
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkStatus, setBulkStatus] = useState("");
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [savingRefund, setSavingRefund] = useState(false);
   const [generatingLabel, setGeneratingLabel] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
 
+  // ১. সম্পূর্ণ ডেটা রিলেশন ও তারিখ অনুযায়ী ফেচিং
   const fetchOrders = async () => {
     setLoading(true);
     let query = supabase
       .from("orders")
-      .select("*")
+      .select("*, order_items(*, products(*)), addresses(*)")
       .order("created_at", { ascending: false });
 
     if (activeTab !== "all") query = query.eq("order_status", activeTab);
@@ -75,9 +93,39 @@ export default function AdminOrdersPage() {
         .eq("payment_type", orderType.filter.payment_type);
     }
 
-    const { data } = await query;
-    const orderList = (data as any) || [];
+    // নির্দিষ্ট তারিখ ফিল্টার লজিক
+    if (selectedDate) {
+      const start = new Date(selectedDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(selectedDate);
+      end.setHours(23, 59, 59, 999);
+      query = query
+        .gte("created_at", start.toISOString())
+        .lte("created_at", end.toISOString());
+    }
 
+    const { data, error } = await query;
+    let orderList = (data as any) || [];
+
+    // ব্যাকআপ ফেচিং (যদি রিলেশনে কোনো সমস্যা হয়)
+    if (error) {
+      console.warn("Deep join fallback triggered:", error.message);
+      let fallbackQuery = supabase
+        .from("orders")
+        .select("*, order_items(*)")
+        .order("created_at", { ascending: false });
+
+      if (activeTab !== "all") fallbackQuery = fallbackQuery.eq("order_status", activeTab);
+      if (orderType?.filter) {
+        fallbackQuery = fallbackQuery
+          .eq("delivery_type", orderType.filter.delivery_type)
+          .eq("payment_type", orderType.filter.payment_type);
+      }
+      const { data: fallbackData } = await fallbackQuery;
+      orderList = fallbackData || [];
+    }
+
+    // ইউজার প্রোফাইল ম্যাপিং
     const userIds = [
       ...new Set(orderList.map((o: any) => o.user_id).filter(Boolean)),
     ];
@@ -106,7 +154,42 @@ export default function AdminOrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [activeTab, activeOrderType]);
+  }, [activeTab, activeOrderType, selectedDate]);
+
+  // ২. নির্বাচিত তারিখ/অর্ডারের সামগ্রিক আইটেম ও ওজন এগ্রিগেশন (বাজার তালিকা)
+  const itemSummary = useMemo(() => {
+    const summaryMap: Record<
+      string,
+      { name: string; totalQty: number; orderCount: number; unitPrice: number }
+    > = {};
+
+    orders.forEach((o) => {
+      const items = Array.isArray(o.order_items)
+        ? o.order_items
+        : Array.isArray(o.items)
+        ? o.items
+        : [];
+
+      items.forEach((item: any) => {
+        const name = resolveItemName(item);
+        const qty = Number(item.quantity || item.qty || item.count || 1);
+        const price = Number(item.price || item.unit_price || 0);
+
+        if (!summaryMap[name]) {
+          summaryMap[name] = {
+            name,
+            totalQty: 0,
+            orderCount: 0,
+            unitPrice: price,
+          };
+        }
+        summaryMap[name].totalQty += qty;
+        summaryMap[name].orderCount += 1;
+      });
+    });
+
+    return Object.values(summaryMap);
+  }, [orders]);
 
   const changeStatus = async (
     orderId: string,
@@ -219,12 +302,8 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const canPrintLabel = (order: Order) =>
-    (order.order_status === "current" ||
-      order.order_status === "out_for_delivery" ||
-      order.order_status === "refund") &&
-    (order.delivery_type === "home_delivery" ||
-      order.delivery_type === "self_pickup");
+  // যেকোনো স্ট্যাটাসের অর্ডারে লেবেল প্রিন্ট/ডাউনলোডের অনুমোদন
+  const canPrintLabel = (order: Order) => Boolean(order);
 
   const handleSingleDownload = async (order: Order) => {
     if (!canPrintLabel(order)) return;
@@ -291,7 +370,15 @@ export default function AdminOrdersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-800 mb-4">Orders</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h1 className="text-2xl font-bold text-gray-800">Orders</h1>
+        <button
+          onClick={() => setShowSummaryModal(true)}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-2 rounded-xl font-semibold flex items-center gap-1.5 shadow-sm transition"
+        >
+          📋 বাজার তালিকা / আইটেম হিসাব ({itemSummary.length})
+        </button>
+      </div>
 
       <div className="mb-4">
         <p className="text-xs text-gray-500 font-medium mb-2">ORDER TYPE</p>
@@ -300,10 +387,10 @@ export default function AdminOrdersPage() {
             <button
               key={t.value}
               onClick={() => setActiveOrderType(t.value)}
-              className={`px-3 py-1.5 text-xs rounded-lg font-medium ${
+              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
                 activeOrderType === t.value
                   ? "bg-purple-600 text-white"
-                  : "bg-white text-gray-700 border border-gray-200"
+                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
               }`}
             >
               {t.label}
@@ -317,10 +404,10 @@ export default function AdminOrdersPage() {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => setActiveTab("all")}
-            className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
+            className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
               activeTab === "all"
                 ? "bg-blue-600 text-white"
-                : "bg-white text-gray-700 border border-gray-200"
+                : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
             }`}
           >
             All
@@ -329,16 +416,40 @@ export default function AdminOrdersPage() {
             <button
               key={s.value}
               onClick={() => setActiveTab(s.value)}
-              className={`px-3 py-1.5 text-sm rounded-lg font-medium ${
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition ${
                 activeTab === s.value
                   ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 border border-gray-200"
+                  : "bg-white text-gray-700 border border-gray-200 hover:bg-gray-50"
               }`}
             >
               {s.label}
             </button>
           ))}
         </div>
+      </div>
+
+      {/* তারিখ ফিল্টার বার */}
+      <div className="bg-white p-3 rounded-xl border border-gray-200 mb-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-gray-600">তারিখ ফিল্টার:</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 bg-gray-50 text-gray-800 outline-none"
+          />
+          {selectedDate && (
+            <button
+              onClick={() => setSelectedDate("")}
+              className="text-xs text-red-600 font-medium hover:underline ml-1"
+            >
+              সব তারিখ দেখুন
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-gray-500">
+          মোট অর্ডার: <span className="font-bold text-gray-800">{orders.length}</span>
+        </p>
       </div>
 
       {selected.length > 0 && (
@@ -396,7 +507,7 @@ export default function AdminOrdersPage() {
       )}
 
       {loading ? (
-        <p className="text-gray-500">Loading...</p>
+        <p className="text-gray-500 py-6">Loading...</p>
       ) : orders.length === 0 ? (
         <div className="bg-white rounded-xl p-8 text-center text-gray-500">
           No orders found for this filter.
@@ -416,6 +527,57 @@ export default function AdminOrdersPage() {
         />
       )}
 
+      {/* 📋 বাজার তালিকা / আইটেম সামারি মোডাল */}
+      {showSummaryModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center pb-3 border-b mb-3">
+              <div>
+                <h3 className="font-bold text-gray-900 text-base">📋 সামগ্রিক বাজার তালিকা</h3>
+                <p className="text-xs text-gray-500">
+                  {selectedDate ? `তারিখ: ${selectedDate}` : "বর্তমান ফিল্টারের সমস্ত অর্ডারের হিসাব"} ({orders.length}টি অর্ডারে)
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-xl font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 pr-1 space-y-2">
+              {itemSummary.length === 0 ? (
+                <p className="text-xs text-gray-500 text-center py-6">কোনো আইটেম পাওয়া যায়নি</p>
+              ) : (
+                itemSummary.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-2.5 bg-gray-50 rounded-lg text-xs">
+                    <div>
+                      <p className="font-bold text-gray-800 text-sm">{item.name}</p>
+                      <p className="text-gray-500 text-[11px]">{item.orderCount}টি অর্ডারে রয়েছে</p>
+                    </div>
+                    <div className="text-right">
+                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
+                        মোট: {item.totalQty} ইউনিট/কেজি
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-3 border-t mt-3 flex justify-end">
+              <button
+                onClick={() => setShowSummaryModal(false)}
+                className="px-4 py-1.5 text-xs text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {viewingOrder && (
         <OrderDetailModal
           order={viewingOrder}
@@ -433,4 +595,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-      }
+        }
+        
