@@ -3,41 +3,28 @@
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-export type OrderItem = {
-  id: string;
-  name: string;
-  price: number;
-  quantity: number;
-  weight?: string | number | null;
-};
-
-export type Order = {
-  id: string;
-  order_number: string;
-  created_at: string;
-  customer_name?: string | null;
-  customer_phone?: string | null;
-  items: OrderItem[];
-  gross_bill: number;
-  refund_amount: number;
-  net_realized: number;
-  delivery_type: "pickup" | "delivery";
-  payment_status: "paid" | "pending" | "failed";
-  order_status: "current" | "out_for_delivery" | "delivered" | "refund" | "refunded" | "pending" | "spam";
-  is_refund_paid?: boolean; // রিফান্ডের টাকা পাঠানো সম্পন্ন হয়েছে কি না
-};
-
-interface OrdersTableProps {
-  orders: Order[];
+export interface OrdersTableProps {
+  orders: any[];
+  selected?: string[];
+  onToggleSelect?: (id: string) => void;
+  onToggleSelectAll?: () => void;
+  onStatusChange?: (orderId: string, newStatus: string) => void;
   onRefresh?: () => void;
+  [key: string]: any; // অন্যান্য যেকোনো প্রপ্স এলেও বিল্ড আটকাতে দেবে না
 }
 
-export default function OrdersTable({ orders: initialOrders, onRefresh }: OrdersTableProps) {
+export default function OrdersTable({
+  orders = [],
+  selected = [],
+  onToggleSelect,
+  onToggleSelectAll,
+  onStatusChange,
+  onRefresh,
+}: OrdersTableProps) {
   const supabase = createClient();
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [selectedFilter, setSelectedFilter] = useState<string>("Refund");
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [paidRefundIds, setPaidRefundIds] = useState<Record<string, boolean>>({});
 
   const filters = [
     "All Orders",
@@ -49,82 +36,79 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
     "Spam",
   ];
 
-  // ফিল্টার অনুযায়ী অর্ডার তালিকা
+  // ফিল্টার অনুযায়ী অর্ডার বাছাই
   const filteredOrders = orders.filter((order) => {
+    const status = (order.order_status || order.status || "").toLowerCase();
+    const hasRefund = Number(order.refund_amount || order.deducted_refund || 0) > 0;
+
     if (selectedFilter === "All Orders") return true;
-    if (selectedFilter === "Current Order") return order.order_status === "current";
-    if (selectedFilter === "Out for Delivery") return order.order_status === "out_for_delivery";
-    if (selectedFilter === "Delivered") return order.order_status === "delivered";
-    if (selectedFilter === "Refund") return order.order_status === "refund" || order.order_status === "refunded" || order.refund_amount > 0;
-    if (selectedFilter === "Pending Order") return order.order_status === "pending";
-    if (selectedFilter === "Spam") return order.order_status === "spam";
+    if (selectedFilter === "Current Order") return status === "current";
+    if (selectedFilter === "Out for Delivery") return status === "out_for_delivery";
+    if (selectedFilter === "Delivered") return status === "delivered";
+    if (selectedFilter === "Refund") return status.includes("refund") || hasRefund;
+    if (selectedFilter === "Pending Order") return status === "pending";
+    if (selectedFilter === "Spam") return status === "spam";
     return true;
   });
 
-  // রিফান্ড পেমেন্ট সম্পন্ন করার হ্যান্ডলার
-  const handleConfirmRefundPayment = async (order: Order) => {
-    if (!confirm(`অর্ডার #${order.order_number}-এর রিফান্ড পেমেন্ট (₹${order.refund_amount}) কাস্টমারকে পাঠানো সম্পন্ন হয়েছে?`)) {
+  // রিফান্ড পেমেন্ট কনফার্ম করার হ্যান্ডলার
+  const handleConfirmPayment = async (order: any) => {
+    const refundAmt = order.refund_amount || order.deducted_refund || 0;
+    if (
+      !confirm(
+        `অর্ডার #${order.order_number || order.id}-এর রিফান্ড টাকা (₹${refundAmt}) কাস্টমারকে পাঠানো সম্পন্ন হয়েছে?`
+      )
+    ) {
       return;
     }
 
     setUpdatingId(order.id);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "refunded",
+          status: "refunded",
+          is_refund_paid: true,
+          refund_paid_at: new Date().toISOString(),
+        })
+        .eq("id", order.id);
 
-    // টাকা পরিশোধ হওয়ার পরই কেবল স্ট্যাটাস চূড়ান্তভাবে 'refunded' হবে
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        order_status: "refunded",
-        is_refund_paid: true,
-        refund_paid_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
+      if (error) throw error;
 
-    if (error) {
-      alert("Error: " + error.message);
-    } else {
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id
-            ? { ...o, order_status: "refunded", is_refund_paid: true }
-            : o
-        )
-      );
-      if (onRefresh) onRefresh();
+      setPaidRefundIds((prev) => ({ ...prev, [order.id]: true }));
+
+      if (onStatusChange) {
+        onStatusChange(order.id, "refunded");
+      }
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      alert("Error: " + (err.message || "Failed to update"));
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
   };
 
   // স্ট্যাটাস ড্রপডাউন হ্যান্ডলার
-  const handleStatusChange = async (orderId: string, newStatus: Order["order_status"]) => {
+  const handleDropdownChange = async (orderId: string, newStatus: string) => {
     setUpdatingId(orderId);
-    const { error } = await supabase
-      .from("orders")
-      .update({ order_status: newStatus })
-      .eq("id", orderId);
-
-    if (error) {
-      alert("Error: " + error.message);
-    } else {
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, order_status: newStatus } : o))
-      );
+    try {
+      if (onStatusChange) {
+        await onStatusChange(orderId, newStatus);
+      } else {
+        await supabase
+          .from("orders")
+          .update({ order_status: newStatus, status: newStatus })
+          .eq("id", orderId);
+      }
       if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert("Error: " + (err.message || "Failed to change status"));
+    } finally {
+      setUpdatingId(null);
     }
-    setUpdatingId(null);
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedOrders.length === filteredOrders.length) {
-      setSelectedOrders([]);
-    } else {
-      setSelectedOrders(filteredOrders.map((o) => o.id));
-    }
-  };
-
-  const toggleSelectOne = (id: string) => {
-    setSelectedOrders((prev) =>
-      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
-    );
   };
 
   return (
@@ -156,8 +140,11 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
         <label className="flex items-center gap-2 cursor-pointer select-none">
           <input
             type="checkbox"
-            checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length}
-            onChange={toggleSelectAll}
+            checked={
+              filteredOrders.length > 0 &&
+              filteredOrders.every((o) => selected.includes(o.id))
+            }
+            onChange={() => onToggleSelectAll && onToggleSelectAll()}
             className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
           />
           <span>Select All ({filteredOrders.length} Orders)</span>
@@ -168,8 +155,25 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
       {/* অর্ডার কার্ড তালিকা */}
       <div className="space-y-4">
         {filteredOrders.map((order) => {
-          const isRefundActive = order.refund_amount > 0 || order.order_status === "refund" || order.order_status === "refunded";
-          const isRefundSettled = isRefundActive && order.is_refund_paid;
+          const refundAmt = Number(order.refund_amount || order.deducted_refund || 0);
+          const isRefundActive =
+            refundAmt > 0 ||
+            (order.order_status || order.status || "").toLowerCase().includes("refund");
+
+          // রিফান্ড পেমেন্ট সম্পন্ন হয়েছে কি না
+          const isRefundPaid = Boolean(
+            order.is_refund_paid || paidRefundIds[order.id]
+          );
+
+          const gross = Number(order.gross_bill || order.total_amount || order.total || 0);
+          const net = Number(order.net_realized || order.net_amount || (gross - refundAmt));
+          const itemsList = order.items || order.order_items || [];
+          const phone =
+            order.customer_phone ||
+            order.phone ||
+            order.profiles?.phone ||
+            order.addresses?.phone ||
+            "No phone attached";
 
           return (
             <div
@@ -181,14 +185,14 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
-                    checked={selectedOrders.includes(order.id)}
-                    onChange={() => toggleSelectOne(order.id)}
+                    checked={selected.includes(order.id)}
+                    onChange={() => onToggleSelect && onToggleSelect(order.id)}
                     className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-slate-900">
-                        #{order.order_number}
+                        #{order.order_number || String(order.id).slice(0, 10)}
                       </span>
                       {isRefundActive && (
                         <span className="bg-rose-50 text-rose-600 border border-rose-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase">
@@ -197,48 +201,53 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
                       )}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-0.5">
-                      {order.created_at}
+                      {order.created_at || "Recent"}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {/* কাস্টমার ইনফো */}
+              {/* কাস্টমার রেকর্ড */}
               <div className="bg-slate-50/70 p-2.5 rounded-xl text-xs space-y-0.5 border border-slate-100">
                 <div className="flex items-center gap-1.5 font-semibold text-slate-700">
                   <span>👤</span>
                   <span>Customer Record</span>
                 </div>
-                <p className="text-slate-400 pl-5 text-[11px]">
-                  {order.customer_phone || "No phone attached"}
-                </p>
+                <p className="text-slate-400 pl-5 text-[11px]">{phone}</p>
               </div>
 
               {/* প্যাকেজড আইটেমস */}
               <div className="space-y-2">
                 <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  Packaged Items ({order.items.length})
+                  Packaged Items ({itemsList.length})
                 </p>
                 <div className="space-y-1.5">
-                  {order.items.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span>📦</span>
-                        <div>
-                          <p className="font-semibold text-slate-800">{item.name}</p>
-                          <p className="text-[11px] text-slate-400">
-                            ₹{item.price} × {item.quantity} {item.weight ? `(${item.weight})` : ""}
-                          </p>
+                  {itemsList.map((item: any, idx: number) => {
+                    const itemName = item.name || item.product_name || item.products?.name_en || "Item";
+                    const itemPrice = Number(item.price || item.unit_price || 0);
+                    const itemQty = Number(item.quantity || 1);
+                    const itemWeight = item.weight ? `(${item.weight})` : "";
+
+                    return (
+                      <div
+                        key={item.id || idx}
+                        className="flex items-center justify-between text-xs py-1 border-b border-slate-50 last:border-0"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span>📦</span>
+                          <div>
+                            <p className="font-semibold text-slate-800">{itemName}</p>
+                            <p className="text-[11px] text-slate-400">
+                              ₹{itemPrice} × {itemQty} {itemWeight}
+                            </p>
+                          </div>
                         </div>
+                        <span className="font-bold text-slate-900">
+                          ₹{(itemPrice * itemQty).toFixed(2)}
+                        </span>
                       </div>
-                      <span className="font-bold text-slate-900">
-                        ₹{(item.price * item.quantity).toFixed(2)}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -246,23 +255,23 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
               <div className="pt-2 border-t border-slate-100 space-y-1 text-xs">
                 <div className="flex justify-between text-slate-600">
                   <span>Gross Bill:</span>
-                  <span className="font-bold text-slate-900">₹{order.gross_bill.toFixed(2)}</span>
+                  <span className="font-bold text-slate-900">₹{gross.toFixed(2)}</span>
                 </div>
 
-                {order.refund_amount > 0 && (
+                {refundAmt > 0 && (
                   <div className="flex justify-between font-semibold text-rose-600">
                     <span>Deducted Refund (UPI):</span>
-                    <span>- ₹{order.refund_amount.toFixed(2)}</span>
+                    <span>- ₹{refundAmt.toFixed(2)}</span>
                   </div>
                 )}
 
                 <div className="flex justify-between font-bold text-emerald-700 pt-1 text-sm">
                   <span>Actual Net Realized:</span>
-                  <span>₹{order.net_realized.toFixed(2)}</span>
+                  <span>₹{net.toFixed(2)}</span>
                 </div>
               </div>
 
-              {/* ব্যাজেস */}
+              {/* স্ট্যাটাস ও ডেলিভারি ব্যাজ */}
               <div className="flex flex-wrap gap-1.5 text-[11px]">
                 <span className="bg-amber-50 text-amber-700 px-2 py-0.5 rounded-md font-medium border border-amber-200/50">
                   {order.delivery_type === "pickup" ? "🚶 Pickup" : "🚚 Delivery"}
@@ -272,59 +281,70 @@ export default function OrdersTable({ orders: initialOrders, onRefresh }: Orders
                   💳 Full Payment
                 </span>
 
-                {/* সংশোধিত স্ট্যাটাস লজিক */}
+                {/* সংশোধিত স্ট্যাটাস লজিক: টাকা না দেওয়া পর্যন্ত 'refund pending' দেখাবে */}
                 <span
                   className={`px-2 py-0.5 rounded-md font-semibold border ${
                     isRefundActive
-                      ? isRefundSettled
-                        ? "bg-slate-100 text-slate-600 border-slate-200"
-                        : "bg-rose-50 text-rose-700 border-rose-200 animate-pulse"
+                      ? isRefundPaid
+                        ? "bg-slate-100 text-slate-700 border-slate-200"
+                        : "bg-rose-50 text-rose-700 border-rose-200"
                       : "bg-slate-100 text-slate-700 border-slate-200"
                   }`}
                 >
-                  Status: {isRefundActive ? (isRefundSettled ? "refunded" : "refund pending") : order.order_status}
+                  Status:{" "}
+                  {isRefundActive
+                    ? isRefundPaid
+                      ? "refunded"
+                      : "refund pending"
+                    : order.order_status || order.status || "current"}
                 </span>
               </div>
 
               {/* অ্যাকশন বাটনসমূহ */}
               <div className="space-y-2 pt-1">
                 <div className="flex gap-2">
-                  {/* স্ট্যাটাস ড্রপডাউন (রিফান্ড সেটেল হলে লক হয়ে যাবে) */}
+                  {/* ড্রপডাউন: রিফান্ড টাকা পরিশোধ হয়ে গেলে এটি লক হয়ে যাবে */}
                   <div className="flex-1">
                     <select
-                      value={order.order_status}
-                      disabled={isRefundSettled || updatingId === order.id}
-                      onChange={(e) =>
-                        handleStatusChange(order.id, e.target.value as Order["order_status"])
+                      value={
+                        isRefundActive
+                          ? isRefundPaid
+                            ? "refunded"
+                            : "refund"
+                          : order.order_status || order.status || "current"
                       }
+                      disabled={isRefundPaid || updatingId === order.id}
+                      onChange={(e) => handleDropdownChange(order.id, e.target.value)}
                       className="w-full px-2.5 py-2 text-xs font-semibold bg-white border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       <option value="current">Current Order</option>
                       <option value="out_for_delivery">Out for Delivery</option>
                       <option value="delivered">Delivered</option>
                       <option value="refund">Refund</option>
-                      <option value="refunded" disabled={!isRefundSettled}>
+                      <option value="refunded" disabled={!isRefundPaid}>
                         Refunded
                       </option>
                       <option value="spam">Spam</option>
                     </select>
                   </div>
 
-                  {/* Payment Done বাটন (টাকা পাঠানো বাকি থাকলেই কেবল দৃশ্যমান হবে) */}
+                  {/* Payment Done বাটন: টাকা পরিশোধ হওয়ার পরেই কেবল Settled দেখাবে */}
                   {isRefundActive && (
                     <div className="flex-1">
-                      {isRefundSettled ? (
+                      {isRefundPaid ? (
                         <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-xl text-center border border-emerald-200">
                           ✅ Refund Settled
                         </div>
                       ) : (
                         <button
-                          onClick={() => handleConfirmRefundPayment(order)}
+                          onClick={() => handleConfirmPayment(order)}
                           disabled={updatingId === order.id}
                           className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-sm shadow-rose-200 disabled:opacity-50 transition"
                         >
                           <span>💳</span>
-                          <span>{updatingId === order.id ? "Processing..." : "Payment Done"}</span>
+                          <span>
+                            {updatingId === order.id ? "Processing..." : "Payment Done"}
+                          </span>
                         </button>
                       )}
                     </div>
