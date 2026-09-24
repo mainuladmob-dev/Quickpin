@@ -1,9 +1,8 @@
-"use client";
+""use client";
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-// './page' থেকে ইমপোর্ট করার দরকার নেই, সরাসরি any টাইপ ব্যবহার করা হলো
 type OrderModalsProps = {
   orders: any[];
   selectedDate?: string;
@@ -11,12 +10,13 @@ type OrderModalsProps = {
   onClosePicklist: () => void;
   rejectingOrder: any;
   onCloseReject: () => void;
-  actionLoading?: boolean;
-  setActionLoading?: (loading: boolean) => void;
-  zoomedImage?: string | null;
+  actionLoading: boolean;
+  setActionLoading: (loading: boolean) => void;
+  zoomedImage: string | null;
   onCloseZoom: () => void;
-  onSuccess?: () => void;
+  onSuccess: () => void;
 };
+
 
 export default function OrderModals({
   orders,
