@@ -14,7 +14,7 @@ export default function AdminRootPage() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      // ইউজার লগইন না থাকলে সরাসরি এডমিন লগইন পেজে পাঠানো
+      // ইউজার লগইন না থাকলে সরাসরি এডমিন লগইন পেজে পাঠাবে
       if (!user) {
         router.replace("/admin/login");
         return;
@@ -26,26 +26,28 @@ export default function AdminRootPage() {
         .eq("id", user.id)
         .maybeSingle();
 
-      // যদি রোল এডমিন, সুপার এডমিন বা স্টাফ হয় -> ড্যাশবোর্ডে পাঠানো
+      // যদি রোল এডমিন, সুপার এডমিন বা স্টাফ হয় -> নতুন অল-ইন-ওয়ান অর্ডার হাবে পাঠাবে
       if (
         profile &&
         ["admin", "super_admin", "staff"].includes(profile.role)
       ) {
-        router.replace("/admin/dashboard");
+        router.replace("/admin/orders");
         return;
       }
 
-      // সাধারণ কাস্টমার হলে তাকে লগআউট না করে সুরক্ষিতভাবে হোমপেজে পাঠানো
+      // সাধারণ কাস্টমার হলে তাকে কাস্টমার হোমপেজে পাঠাবে
       router.replace("/home");
     };
 
     check();
-  }, [router]);
+  }, [router, supabase]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
-      <p className="text-gray-500">Redirecting...</p>
+      <div className="flex items-center gap-3 text-slate-600">
+        <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-sm font-semibold text-slate-600">Redirecting to Live Panel...</p>
+      </div>
     </div>
   );
 }
-
