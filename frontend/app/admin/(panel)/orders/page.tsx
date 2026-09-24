@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import RefundModal from "./RefundModal";
 import { generateLabelPDF } from "@/lib/label-generator";
@@ -95,45 +94,25 @@ function formatOrdersForPrint(orderList: Order[]): Order[] {
   });
 }
 
-function OrdersContent() {
+export default function AdminOrdersPage() {
   const supabase = createClient();
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  const queryDate = searchParams.get("date");
-  const initialStatus = searchParams.get("status") || "all";
-
-  const [selectedDate, setSelectedDate] = useState<string>(
-    queryDate || getTodayDateString()
-  );
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDateString());
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(initialStatus);
+  const [activeTab, setActiveTab] = useState("all");
   const [activeOrderType, setActiveOrderType] = useState("all");
-  const [selected, setSelected] = useState<string[]>([]);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [savingRefund, setSavingRefund] = useState(false);
   const [generatingLabel, setGeneratingLabel] = useState(false);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
-  const [printedOrderIds, setPrintedOrderIds] = useState<string[]>([]);
 
+  // ড্রপডাউন ও স্ক্রিনশট প্রিভিউ স্টেট
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
   const toggleExpand = (id: string) => {
     setExpandedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const handleDateChange = (newDate: string) => {
-    setSelectedDate(newDate);
-    const params = new URLSearchParams(searchParams.toString());
-    if (newDate) {
-      params.set("date", newDate);
-    } else {
-      params.delete("date");
-    }
-    router.replace(`${pathname}?${params.toString()}`);
   };
 
   const fetchOrders = useCallback(async () => {
@@ -204,7 +183,6 @@ function OrdersContent() {
     }));
 
     setOrders(enriched);
-    setSelected([]);
     setLoading(false);
   }, [activeTab, activeOrderType, selectedDate, supabase]);
 
@@ -288,11 +266,7 @@ function OrdersContent() {
     return Object.values(summaryMap);
   }, [orders]);
 
-  const changeStatus = async (
-    orderId: string,
-    newStatus: string,
-    extra?: any
-  ) => {
+  const changeStatus = async (orderId: string, newStatus: string, extra?: any) => {
     const order = orders.find((o) => o.id === orderId);
     if (!order) return false;
 
@@ -362,7 +336,7 @@ function OrdersContent() {
     try {
       await supabase.from("refunds").insert({
         order_id: refundOrder.id,
-        product_name: data.product_name || "Granular Item Refund",
+        product_name: data.product_name || "Item Refund",
         amount: data.amount,
         refund_method: data.method.toLowerCase(),
         reason: data.reason || "rotten",
@@ -397,7 +371,6 @@ function OrdersContent() {
     try {
       const formatted = formatOrdersForPrint([order]);
       await generateLabelPDF(formatted, `label-${order.order_number}.pdf`);
-      setPrintedOrderIds((prev) => [...new Set([...prev, order.id])]);
       try {
         await supabase.from("orders").update({ is_printed: true } as any).eq("id", order.id);
       } catch {}
@@ -415,11 +388,11 @@ function OrdersContent() {
           <input
             type="date"
             value={selectedDate}
-            onChange={(e) => handleDateChange(e.target.value)}
+            onChange={(e) => setSelectedDate(e.target.value)}
             className="text-xs font-semibold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 text-slate-800 outline-none"
           />
           <button
-            onClick={() => handleDateChange(getTodayDateString())}
+            onClick={() => setSelectedDate(getTodayDateString())}
             className={`text-xs px-2.5 py-1.5 rounded-lg font-semibold transition ${
               selectedDate === getTodayDateString()
                 ? "bg-blue-600 text-white"
@@ -429,7 +402,7 @@ function OrdersContent() {
             Today
           </button>
           <button
-            onClick={() => handleDateChange(getYesterdayDateString())}
+            onClick={() => setSelectedDate(getYesterdayDateString())}
             className={`text-xs px-2.5 py-1.5 rounded-lg font-semibold transition ${
               selectedDate === getYesterdayDateString()
                 ? "bg-blue-600 text-white"
@@ -493,7 +466,7 @@ function OrdersContent() {
         </div>
       </div>
 
-      {/* ৪. অর্ডার কার্ড লিস্ট (Accordion / Dropdown View) */}
+      {/* ৪. অর্ডার ড্রপডাউন কার্ডের তালিকা */}
       {loading ? (
         <div className="bg-white p-8 text-center text-xs text-slate-400 rounded-2xl border border-slate-200">
           অর্ডার লোড হচ্ছে...
@@ -541,7 +514,7 @@ function OrdersContent() {
                 key={order.id}
                 className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition"
               >
-                {/* কার্ডের হেডার (ক্লিক করলে নিচে ড্রপডাউন খুলবে) */}
+                {/* কার্ডের হেডার (ক্লিক করলে নিচে ড্রপডাউন উন্মোচিত হবে) */}
                 <div
                   onClick={() => toggleExpand(order.id)}
                   className="p-3.5 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-50/80 transition"
@@ -573,7 +546,6 @@ function OrdersContent() {
                       ₹{Number(order.total_amount || 0).toFixed(2)}
                     </span>
 
-                    {/* স্ট্যাটাস ব্যাজ */}
                     <span
                       className={`text-[10px] font-bold px-2.5 py-1 rounded-full capitalize ${
                         isPending
@@ -590,19 +562,17 @@ function OrdersContent() {
                       {order.order_status}
                     </span>
 
-                    {/* পেমেন্ট টাইপ */}
                     <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md uppercase">
                       {order.payment_type || "COD"}
                     </span>
                   </div>
                 </div>
 
-                {/* ড্রপডাউন বডি (ক্লিক করলে উন্মোচিত হবে) */}
+                {/* ড্রপডাউন বডি */}
                 {isExpanded && (
                   <div className="p-4 bg-slate-50/50 border-t border-slate-100 space-y-4">
-                    {/* গ্রিড: ঠিকানা ও বাজারের ফর্দ */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* পার্ট ১: কাস্টমার ও ঠিকানা */}
+                      {/* ১. কাস্টমার ও ঠিকানা */}
                       <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
                         <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
                           📍 কাস্টমার ও ডেলিভারি ঠিকানা
@@ -624,7 +594,7 @@ function OrdersContent() {
                         </p>
                       </div>
 
-                      {/* পার্ট ২: বাজারের ফর্দ */}
+                      {/* ২. বাজারের ফর্দ */}
                       <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
                         <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
                           🛍️ বাজারের আইটেম লিস্ট ({items.length})
@@ -652,7 +622,7 @@ function OrdersContent() {
                       </div>
                     </div>
 
-                    {/* পার্ট ৩: পেমেন্ট ভেরিফিকেশন ও স্ক্রিনশট প্রিভিউ */}
+                    {/* ৩. পেমেন্ট ভেরিফিকেশন ও স্ক্রিনশট */}
                     <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-3">
                       <div className="flex items-center justify-between">
                         <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
@@ -700,7 +670,7 @@ function OrdersContent() {
                         </p>
                       )}
 
-                      {/* পার্ট ৪: অ্যাকশন বাটনসমূহ */}
+                      {/* অ্যাকশন বাটনসমূহ */}
                       <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
                         {isPending && (
                           <button
@@ -810,43 +780,29 @@ function OrdersContent() {
         </div>
       )}
 
-      {/* স্ক্রিনশট ফুলস্ক্রিন জুম মোডাল */}
+      {/* স্ক্রিনশট জুম মোডাল */}
       {zoomedImage && (
         <div
           onClick={() => setZoomedImage(null)}
           className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
         >
           <div className="relative max-w-lg w-full bg-white rounded-2xl p-2">
-            <img src={zoomedImage} alt="Enlarged Proof" className="w-full h-auto rounded-xl" /
-              <p className="text-center text-xs text-slate-500 mt-2">স্ক্রিনের যেকোনো জায়গায় চাপ দিলে বন্ধ হবে</p>
-            </div>
+            <img src={zoomedImage} alt="Enlarged Proof" className="w-full h-auto rounded-xl" />
+            <p className="text-center text-xs text-slate-500 mt-2">স্ক্রিনের যেকোনো জায়গায় চাপ দিলে বন্ধ হবে</p>
           </div>
-        )}
-
-        {/* রিফান্ড মোডাল */}
-        {refundOrder && (
-          <RefundModal
-            order={refundOrder}
-            onClose={() => setRefundOrder(null)}
-            onSubmit={submitRefund}
-            saving={savingRefund}
-          />
-        )}
-      </div>
-    );
-}
-
-export default function AdminOrdersPage() {
-  return (
-    <Suspense
-      fallback={
-        <div className="p-8 text-center text-xs text-slate-400">
-          অর্ডার খাতা লোড হচ্ছে...
         </div>
-      }
-    >
-      <OrdersContent />
-    </Suspense>
+      )}
+
+      {/* রিফান্ড মোডাল */}
+      {refundOrder && (
+        <RefundModal
+          order={refundOrder}
+             onClose={() => setRefundOrder(null)}
+          onSubmit={submitRefund}
+          saving={savingRefund}
+        />
+      )}
+    </div>
   );
 }
 
