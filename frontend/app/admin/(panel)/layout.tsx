@@ -34,18 +34,39 @@ export default function AdminLayout({
   }, [pathname]);
 
   useEffect(() => {
-    if (isLoginPage) {
-      setLoading(false);
-      return;
-    }
+    let isMounted = true;
 
-    const checkAuth = async () => {
+    const checkAuthAndBypass = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
+      // ১. যদি ইউজার লগইন পেজে আসে কিন্তু সে হোমপেজ থেকে অলরেডি লগইন করা থাকে:
+      if (isLoginPage) {
+        if (session?.user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", session.user.id)
+            .maybeSingle();
+
+          if (
+            isMounted &&
+            profile &&
+            ["admin", "super_admin", "staff"].includes(profile.role)
+          ) {
+            // বাড়তি লগইন পেজটি আর দেখাবেই না—সরাসরি অর্ডারের ভেতরে পাঠিয়ে দেবে
+            window.location.replace("/admin/orders");
+            return;
+          }
+        }
+        if (isMounted) setLoading(false);
+        return;
+      }
+
+      // ২. সাধারণ অ্যাডমিন পেজের জন্য গার্ড:
       if (!session?.user) {
-        window.location.replace("/admin/login");
+        if (isMounted) window.location.replace("/admin/login");
         return;
       }
 
@@ -54,6 +75,8 @@ export default function AdminLayout({
         .select("name, role")
         .eq("id", session.user.id)
         .maybeSingle();
+
+      if (!isMounted) return;
 
       if (!profile || !["admin", "super_admin", "staff"].includes(profile.role)) {
         await supabase.auth.signOut();
@@ -66,18 +89,33 @@ export default function AdminLayout({
       setLoading(false);
     };
 
-    checkAuth();
+    checkAuthAndBypass();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isLoginPage, supabase]);
 
-  // Login page hole kono header ba drawer chara sudhu clean login form dekhabe
+  // লগইন পেজ হলে হেডার/সাইডবার সম্পূর্ণ বন্ধ থাকবে
   if (isLoginPage) {
+    if (loading) {
+      return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+          <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      );
+    }
     return <>{children}</>;
   }
 
+  // ড্যাশবোর্ড পেজের লোডিং স্পিনার
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="flex items-center gap-3 text-slate-600">
+          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-semibold">অ্যাডমিন প্যানেল লোড হচ্ছে...</p>
+        </div>
       </div>
     );
   }
@@ -111,7 +149,7 @@ export default function AdminLayout({
 
           <nav className="p-3 space-y-1 overflow-y-auto">
             <p className="px-3 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
-              Management
+              ম্যানেজমেন্ট
             </p>
             {navItems.map((item) => {
               const isActive =
@@ -152,7 +190,7 @@ export default function AdminLayout({
         />
       )}
 
-      {/* Main Container */}
+      {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
           <div className="px-4 py-2.5 flex items-center justify-between">
@@ -195,5 +233,4 @@ export default function AdminLayout({
       </div>
     </div>
   );
-                }
-
+}
