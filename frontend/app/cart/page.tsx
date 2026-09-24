@@ -56,18 +56,18 @@ export default function CartPage() {
           .from("settings")
           .select("value")
           .eq("key", "min_cart_units")
-          .single(),
+          .maybeSingle(),
       ]);
 
       setItems((cartData.data as any) || []);
-      if (settingsData.data) {
+      if (settingsData.data?.value) {
         setMinUnits(parseInt(settingsData.data.value) || 10);
       }
       setLoading(false);
     };
 
     fetchData();
-  }, [user, userLoading, supabase, router]);
+  }, [user, userLoading, router]);
 
   const fetchCart = async () => {
     if (!user) return;
@@ -125,6 +125,13 @@ export default function CartPage() {
     0
   );
   const canCheckout = totalUnits >= minUnits;
+
+  // ভাষা ফাইলে কী না থাকলেও ক্র্যাশ আটকানোর সেফটি টেক্সট
+  const minUnitsMsg = (t("min_units_msg") || "").includes("{count}")
+    ? t("min_units_msg").replace("{count}", String(totalUnits))
+    : lang === "bn"
+    ? `কমপক্ষে ${minUnits} ইউনিট কার্টে থাকতে হবে (বর্তমানে আছে ${totalUnits} টি)`
+    : `Minimum ${minUnits} units required (currently ${totalUnits})`;
 
   if (loading || userLoading) {
     return (
@@ -189,19 +196,26 @@ export default function CartPage() {
             <div className="space-y-3 mb-6">
               {items.map((item) => {
                 if (!item.product) return null;
+                const imageSrc =
+                  Array.isArray(item.product.images) && item.product.images[0]
+                    ? item.product.images[0]
+                    : null;
+
                 return (
                   <div
                     key={item.id}
                     className="bg-white rounded-xl p-3 flex gap-3 items-center"
                   >
-                    {item.product.images && item.product.images[0] ? (
+                    {imageSrc ? (
                       <img
-                        src={item.product.images[0]}
+                        src={imageSrc}
                         alt={getName(item.product)}
                         className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
                       />
                     ) : (
-                      <div className="w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0"></div>
+                      <div className="w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0 flex items-center justify-center text-gray-400">
+                        📦
+                      </div>
                     )}
 
                     <div className="flex-1 min-w-0">
@@ -300,7 +314,7 @@ export default function CartPage() {
               {/* Min units warning */}
               {!canCheckout && (
                 <div className="bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2 rounded-lg mb-3">
-                  {t("min_units_msg").replace("{count}", String(totalUnits))}
+                  {minUnitsMsg}
                 </div>
               )}
 
@@ -311,7 +325,7 @@ export default function CartPage() {
               >
                 {canCheckout
                   ? t("checkout")
-                  : `${t("min_units_short")} (${totalUnits}/${minUnits})`}
+                  : `${t("min_units_short") || (lang === "bn" ? "কমপক্ষে" : "Min units")} (${totalUnits}/${minUnits})`}
               </button>
             </div>
           </>
@@ -319,4 +333,4 @@ export default function CartPage() {
       </div>
     </div>
   );
-              }
+}
