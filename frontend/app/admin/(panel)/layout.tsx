@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-export default function AdminPanelLayout({
+export default function AdminLayout({
   children,
 }: {
   children: React.ReactNode;
@@ -19,7 +19,8 @@ export default function AdminPanelLayout({
   const [adminRole, setAdminRole] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Shudhumatro apnar asol o working page gulo
+  const isLoginPage = pathname === "/admin/login";
+
   const navItems = [
     { name: "Orders (All-in-One)", href: "/admin/orders", icon: "📦" },
     { name: "Products", href: "/admin/products", icon: "🛍️" },
@@ -29,57 +30,67 @@ export default function AdminPanelLayout({
     { name: "Settings", href: "/admin/settings", icon: "⚙️" },
   ];
 
-  // Route change hole drawer auto bondho hobe
   useEffect(() => {
     setSidebarOpen(false);
   }, [pathname]);
 
-  // Auth Guard: Admin na hole direct login page-e pathiye debe
+  // Auth Guard
   useEffect(() => {
-    const checkAdmin = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    // লগইন পেজে থাকলে কোনো অথেন্টিকশন ভেরিফিকেশন বা রিডাইরেক্ট চালাবে না
+    if (isLoginPage) {
+      setLoading(false);
+      return;
+    }
 
-      if (!user) {
-        router.push("/admin/login");
+    let mounted = true;
+
+    const verifyAdmin = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        if (mounted) window.location.href = "/admin/login";
         return;
       }
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("name, role")
-        .eq("id", user.id)
-        .single();
+        .eq("id", session.user.id)
+        .maybeSingle();
 
-      if (
-        !profile ||
-        !["admin", "super_admin", "staff"].includes(profile.role)
-      ) {
+      if (!mounted) return;
+
+      if (!profile || !["admin", "super_admin", "staff"].includes(profile.role)) {
         await supabase.auth.signOut();
-        router.push("/admin/login");
+        window.location.href = "/admin/login";
         return;
       }
 
-      setAdminName(profile.name || user.email || "Admin");
+      setAdminName(profile.name || session.user.email || "Admin");
       setAdminRole(profile.role);
       setLoading(false);
     };
 
-    checkAdmin();
-  }, [router, supabase]);
+    verifyAdmin();
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push("/admin/login");
-  };
+    return () => {
+      mounted = false;
+    };
+  }, [isLoginPage, supabase]);
+
+  // লগইন পেজ হলে হেডার/সাইডবার ছাড়া শুধু ফ্রেশ লগইন ফর্মটি দেখাবে
+  if (isLoginPage) {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <div className="flex items-center gap-3 text-slate-600">
           <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm font-medium">Loading admin panel...</p>
+          <p className="text-sm font-medium">Verifying Session...</p>
         </div>
       </div>
     );
@@ -87,14 +98,13 @@ export default function AdminPanelLayout({
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* 1. Left Sidebar (Desktop Fixed / Mobile Floating Overlay) */}
+      {/* Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col justify-between transform transition-transform duration-200 ease-in-out ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         } md:translate-x-0 md:static md:inset-auto shadow-2xl md:shadow-none`}
       >
         <div>
-          {/* Header */}
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="text-xl">⚡</span>
@@ -113,7 +123,6 @@ export default function AdminPanelLayout({
             </button>
           </div>
 
-          {/* Navigation Links */}
           <nav className="p-3 space-y-1 overflow-y-auto">
             <p className="px-3 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
               Management
@@ -140,8 +149,7 @@ export default function AdminPanelLayout({
           </nav>
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="p-3 border-t border-slate-800 space-y-2">
+        <div className="p-3 border-t border-slate-800">
           <Link
             href="/"
             className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition border border-slate-700"
@@ -151,7 +159,7 @@ export default function AdminPanelLayout({
         </div>
       </aside>
 
-      {/* 2. Mobile Backdrop (Outside tap korle drawer bondho hobe) */}
+      {/* Backdrop */}
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
@@ -159,7 +167,7 @@ export default function AdminPanelLayout({
         />
       )}
 
-      {/* 3. Main Content Area */}
+      {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
           <div className="px-4 py-2.5 flex items-center justify-between">
@@ -184,7 +192,10 @@ export default function AdminPanelLayout({
                 </p>
               </div>
               <button
-                onClick={handleLogout}
+                onClick={async () => {
+                  await supabase.auth.signOut();
+                  window.location.href = "/admin/login";
+                }}
                 className="text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-xl transition border border-rose-200"
               >
                 Logout
