@@ -70,7 +70,11 @@ export default function AddressesPage() {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ ...emptyForm });
+    // যদি আগে থেকে কোনো ঠিকানা না থাকে, তবে প্রথমটি স্বয়ংক্রিয়ভাবে ডিফল্ট হবে
+    setForm({
+      ...emptyForm,
+      is_default: addresses.length === 0,
+    });
     setError("");
     setShowForm(true);
   };
@@ -98,7 +102,7 @@ export default function AddressesPage() {
     setError("");
     setSaving(true);
 
-    // Validation
+    // ভ্যালিডেশন
     if (
       !form.full_name.trim() ||
       !form.phone.trim() ||
@@ -122,6 +126,9 @@ export default function AddressesPage() {
       return;
     }
 
+    // প্রথম ঠিকানা হলে স্বয়ংক্রিয়ভাবে ডিফল্ট করা
+    const shouldBeDefault = addresses.length === 0 ? true : form.is_default;
+
     const payload = {
       user_id: user.id,
       label: form.label.trim() || "Home",
@@ -133,11 +140,11 @@ export default function AddressesPage() {
       state: form.state.trim(),
       pincode: form.pincode.trim(),
       country: "India",
-      is_default: form.is_default,
+      is_default: shouldBeDefault,
     };
 
-    // If setting as default, unset others
-    if (form.is_default) {
+    // যদি ডিফল্ট হিসেবে সেট করা হয়, তবে বাকি ঠিকানাগুলোর ডিফল্ট ফ্ল্যাগ ফলস করা
+    if (shouldBeDefault) {
       await supabase
         .from("addresses")
         .update({ is_default: false })
@@ -166,8 +173,8 @@ export default function AddressesPage() {
       return;
     }
 
-    // If this is default, update profile
-    if (form.is_default && result.data) {
+    // প্রোফাইলে ডিফল্ট অ্যাড্রেস আইডি সিঙ্ক করা
+    if (shouldBeDefault && result.data) {
       await supabase
         .from("profiles")
         .update({ default_address_id: result.data.id })
@@ -187,7 +194,32 @@ export default function AddressesPage() {
       )
     )
       return;
+
     await supabase.from("addresses").delete().eq("id", addr.id);
+
+    // ডিফল্ট ঠিকানা মুছে ফেলা হলে অবশিষ্টগুলোর একটিকে নতুন ডিফল্ট বানানো বা প্রোফাইল ক্লিয়ার করা
+    if (addr.is_default) {
+      const remaining = addresses.filter((a) => a.id !== addr.id);
+      if (remaining.length > 0) {
+        const nextDefault = remaining[0];
+        await supabase
+          .from("addresses")
+          .update({ is_default: true })
+          .eq("id", nextDefault.id);
+
+        await supabase
+          .from("profiles")
+          .update({ default_address_id: nextDefault.id })
+          .eq("id", user!.id);
+      } else {
+        await supabase
+          .from("profiles")
+          .update({ default_address_id: null })
+          .eq("id", user!.id);
+      }
+      await refreshProfile();
+    }
+
     fetchAddresses();
   };
 
@@ -531,4 +563,5 @@ export default function AddressesPage() {
       )}
     </div>
   );
-  }
+        }
+                    
