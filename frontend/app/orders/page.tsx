@@ -1,546 +1,484 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useLanguage } from "@/lib/i18n/LanguageContext";
-import { useUser } from "@/lib/auth/useUser";
-import UserMenu from "@/components/UserMenu";
+import OrderCard from "./ordercard";
+import OrderModals from "./ordermodals";
+import RefundModal from "./RefundModal";
 
-type OrderItem = {
-  id?: string;
-  name?: string;
-  name_bn?: string;
-  name_en?: string;
+export type OrderItem = {
+  id: string;
   product_name?: string;
-  title?: string;
-  quantity?: number;
-  qty?: number;
-  count?: number;
-  price?: number;
+  name?: string;
+  quantity: number;
   unit_price?: number;
-  image?: any;
-  images?: any;
-  image_url?: any;
-  product?: any;
-  products?: any;
-  [key: string]: any;
+  price?: number;
+  unit?: string;
+  weight?: number;
 };
 
-type Order = {
+export type Order = {
   id: string;
   order_number: string;
-  delivery_type: string;
-  payment_type: string;
   total_amount: number;
   paid_amount: number;
   remaining_amount: number;
-  partial_payment_amount: number;
+  payment_method: string | null;
   payment_status: string;
+  payment_type: "full" | "partial";
+  partial_payment_amount: number;
+  upi_transaction_id?: string | null;
+  payment_screenshot_url?: string | null;
+  screenshot_status?: string;
+  screenshot_attempts?: number;
+  rejection_reason?: string | null;
   order_status: string;
-  refund_reason: string | null;
-  refund_amount: number | null;
+  delivery_type?: string;
+  delivery_address?: string | null;
+  refund_amount?: number;
   created_at: string;
-  items?: any;
-  order_items?: any;
-  [key: string]: any;
+  user_id: string | null;
+  profile?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  } | null;
+  items?: OrderItem[];
 };
 
-const STATUS_LABELS: Record<
-  string,
-  { bn: string; en: string; color: string }
-> = {
-  pending: {
-    bn: "অপেক্ষমাণ",
-    en: "Pending",
-    color: "bg-yellow-100 text-yellow-700",
-  },
-  current: {
-    bn: "চলমান",
-    en: "Current",
-    color: "bg-green-100 text-green-700",
-  },
-  out_for_delivery: {
-    bn: "ডেলিভারির পথে",
-    en: "Out for Delivery",
-    color: "bg-blue-100 text-blue-700",
-  },
-  delivered: {
-    bn: "ডেলিভার হয়েছে",
-    en: "Delivered",
-    color: "bg-emerald-100 text-emerald-700",
-  },
-  refund: {
-    bn: "ফেরত",
-    en: "Refund",
-    color: "bg-purple-100 text-purple-700",
-  },
-  spam: {
-    bn: "বাতিল",
-    en: "Spam",
-    color: "bg-red-100 text-red-700",
-  },
-};
-
-// ছবির আসল লিঙ্ক বের করার ডায়নামিক ফাংশন
-function resolveImageUrl(item: any): string | null {
-  const p = item?.products || item?.product || {};
-  const raw =
-    p.images ??
-    p.image ??
-    p.image_url ??
-    item?.images ??
-    item?.image ??
-    item?.image_url ??
-    p.thumbnail ??
-    p.photo ??
-    null;
-
-  if (!raw) return null;
-
-  let target: any = raw;
-
-  // ১. যদি সরাসরি অ্যারে থাকে
-  if (Array.isArray(target) && target.length > 0) {
-    target = target[0];
-  }
-
-  // ২. যদি স্ট্রিং আকারে JSON অ্যারে '["https://..."]' থাকে
-  if (typeof target === "string") {
-    const trimmed = target.trim();
-    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          target = parsed[0];
-        }
-      } catch {
-        target = trimmed.replace(/[\[\]"']/g, "");
-      }
-    }
-  }
-
-  if (typeof target !== "string" || !target.trim()) return null;
-  target = target.trim();
-
-  // ৩. যদি সম্পূর্ণ URL হয়
-  if (target.startsWith("http://") || target.startsWith("https://")) {
-    return target;
-  }
-
-  // ৪. যদি শুধুমাত্র ফাইলের নাম বা আপেক্ষিক পাথ থাকে
-  const cleanPath = target.replace(/^\/+/, "").replace(/^products\//, "");
-  return `https://uewgqsfptqbkytfyozqi.supabase.co/storage/v1/object/public/products/${cleanPath}`;
-}
-
-// প্রোডাক্টের ভাষা অনুযায়ী সঠিক নাম পাওয়ার ফাংশন
-function resolveItemName(item: any, lang: string): string {
-  const p = item?.products || item?.product || {};
-  if (lang === "bn") {
-    return (
-      p.name_bn ||
-      item.name_bn ||
-      p.name ||
-      item.name ||
-      item.product_name ||
-      p.title ||
-      item.title ||
-      "আইটেম"
-    );
-  }
-  return (
-    p.name_en ||
-    item.name_en ||
-    p.name ||
-    item.name ||
-    item.product_name ||
-    p.title ||
-    item.title ||
-    "Item"
-  );
-}
-
-export default function MyOrdersPage() {
+export default function AdminOrdersPage() {
   const supabase = createClient();
-  const { lang, t } = useLanguage();
-  const { user, loading: userLoading } = useUser();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      if (userLoading) return;
-      if (!user) {
-        setLoading(false);
-        return;
-      }
+  // ফিল্টার স্টেটসমূহ
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [deliveryFilter, setDeliveryFilter] = useState<string>("all");
 
-      let fetchedOrders: any[] = [];
+  // UI ও মোডাল স্টেট
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [showPicklistModal, setShowPicklistModal] = useState(false);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
+  const [rejectingOrder, setRejectingOrder] = useState<Order | null>(null);
+  const [refundOrder, setRefundOrder] = useState<Order | null>(null);
+  const [savingRefund, setSavingRefund] = useState(false);
 
-      // ১. সম্পূর্ণ ডেটা রিলেশনসহ ফেচ করা
-      const { data: deepData, error: deepError } = await supabase
+  // ডাটাবেজ থেকে অর্ডার লোড
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    try {
+      let query = supabase
         .from("orders")
-        .select("*, order_items(*, products(*))")
-        .eq("user_id", user.id)
+        .select("*, order_items(*)")
         .order("created_at", { ascending: false });
 
-      if (!deepError && deepData) {
-        fetchedOrders = deepData;
-      } else {
-        // ২. রিলেশন ব্যাকআপ
-        const { data: itemData, error: itemError } = await supabase
-          .from("orders")
-          .select("*, order_items(*)")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (!itemError && itemData) {
-          fetchedOrders = itemData;
-        } else {
-          // ৩. সেফটি ব্যাকআপ
-          const { data: fallbackData } = await supabase
-            .from("orders")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false });
-
-          fetchedOrders = fallbackData || [];
-        }
+      if (selectedDate) {
+        query = query
+          .gte("created_at", `${selectedDate}T00:00:00.000Z`)
+          .lte("created_at", `${selectedDate}T23:59:59.999Z`);
       }
 
-      setOrders(fetchedOrders as Order[]);
+      const { data: orderData, error: orderError } = await query;
+      if (orderError) throw orderError;
+
+      const rawList = (orderData as any[]) || [];
+      const userIds = [...new Set(rawList.map((o) => o.user_id).filter(Boolean))];
+
+      let profileMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: pData } = await supabase
+          .from("profiles")
+          .select("id, name, phone, email, address")
+          .in("id", userIds);
+
+        (pData || []).forEach((p: any) => {
+          profileMap[p.id] = p;
+        });
+      }
+
+      const formatted: Order[] = rawList.map((o) => ({
+        ...o,
+        profile: profileMap[o.user_id] || null,
+        items: o.order_items || o.items || [],
+      }));
+
+      setOrders(formatted);
+    } catch (err: any) {
+      console.error("Orders fetch error:", err.message);
+    } finally {
       setLoading(false);
-    };
+    }
+  }, [selectedDate, supabase]);
 
+  useEffect(() => {
     fetchOrders();
-  }, [user, userLoading, supabase]);
+  }, [fetchOrders]);
 
-  const getStatusInfo = (status: string) => {
-    const info = STATUS_LABELS[status] || {
-      bn: status,
-      en: status,
-      color: "bg-gray-100 text-gray-700",
-    };
-    return {
-      label: lang === "bn" ? info.bn : info.en,
-      color: info.color,
-    };
+  // স্ট্যাটাস পরিবর্তন
+  const handleStatusChange = async (orderId: string, nextStatus: string) => {
+    setActionLoading(true);
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        order_status: nextStatus,
+        status_changed_at: new Date().toISOString(),
+      })
+      .eq("id", orderId);
+
+    setActionLoading(false);
+    if (error) {
+      alert("Status update failed: " + error.message);
+      return;
+    }
+    fetchOrders();
   };
 
-  if (loading || userLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow-sm">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/home" className="text-2xl font-bold text-blue-600">
-              {t("app_name")}
-            </Link>
-            <UserMenu />
+  // পেমেন্ট অনুমোদন
+  const handleApprovePayment = async (order: Order) => {
+    if (!confirm(`অর্ডার #${order.order_number}-এর পেমেন্ট কনফার্ম করতে চান?`)) return;
+    setActionLoading(true);
+
+    const total = Number(order.total_amount || 0);
+    const partial = Number(order.partial_payment_amount || 0);
+    const paidAmount = order.payment_type === "partial" ? partial : total;
+
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        payment_status: "success",
+        payment_verified_by: "admin",
+        payment_verified_at: new Date().toISOString(),
+        screenshot_status: "approved",
+        order_status: "current",
+        status_changed_at: new Date().toISOString(),
+        rejection_reason: null,
+        paid_amount: paidAmount,
+        remaining_amount: Math.max(0, total - paidAmount),
+      })
+      .eq("id", order.id);
+
+    setActionLoading(false);
+    if (error) {
+      alert("পেমেন্ট কনফার্ম করা যায়নি: " + error.message);
+      return;
+    }
+    fetchOrders();
+  };
+
+  // স্ক্রিনশট দেখা
+  const handleViewScreenshot = async (url?: string | null) => {
+    if (!url) return;
+    if (url.startsWith("http")) {
+      setZoomedImage(url);
+      return;
+    }
+    setImageLoading(true);
+    try {
+      const path = url.replace(/^payment-screenshots\//, "").replace(/^\/+/, "");
+      const { data, error } = await supabase.storage
+        .from("payment-screenshots")
+        .createSignedUrl(path, 3600);
+      if (error || !data) throw error;
+      setZoomedImage(data.signedUrl);
+    } catch (err: any) {
+      alert("স্ক্রিনশট লোড করা যায়নি: " + (err?.message || "File not found"));
+    } finally {
+      setImageLoading(false);
+    }
+  };
+
+  // রিফান্ড সেভ
+  const submitRefund = async (refundData: any) => {
+    setSavingRefund(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "refund",
+          refund_amount: refundData.amount,
+          refund_reason: refundData.reason,
+          status_changed_at: new Date().toISOString(),
+        })
+        .eq("id", refundOrder?.id);
+
+      if (error) throw error;
+      setRefundOrder(null);
+      fetchOrders();
+    } catch (err: any) {
+      alert("রিফান্ড সেভ হয়নি: " + err.message);
+    } finally {
+      setSavingRefund(false);
+    }
+  };
+
+  // ক্যাশ মেমো / স্লিপ প্রিন্ট
+  const handlePrintSlip = (order: Order) => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Order #${order.order_number}</title>
+          <style>
+            body { font-family: sans-serif; padding: 16px; font-size: 13px; color: #111; }
+            .header { text-align: center; border-bottom: 1px dashed #999; padding-bottom: 8px; margin-bottom: 8px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
+            .items { border-top: 1px dashed #999; border-bottom: 1px dashed #999; padding: 8px 0; margin: 8px 0; }
+            .bold { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2 style="margin: 0;">Quickpin Order Slip</h2>
+            <p style="margin: 4px 0;">Order #${order.order_number}</p>
           </div>
-        </header>
-        <div className="max-w-3xl mx-auto px-4 py-8">
-          <div className="space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <div
-                key={i}
-                className="bg-white rounded-xl p-4 animate-pulse space-y-2"
-              >
-                <div className="h-4 bg-gray-200 rounded w-1/3"></div>
-                <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+          <div class="row"><span>গ্রাহক:</span><span class="bold">${order.profile?.name || "Customer"}</span></div>
+          <div class="row"><span>ফোন:</span><span>${order.profile?.phone || "-"}</span></div>
+          <div class="row"><span>ঠিকানা:</span><span>${order.delivery_address || order.profile?.address || "Store Pickup"}</span></div>
+          <div class="row"><span>ডেলিভারি মোড:</span><span class="bold">${order.delivery_type === "pickup" ? "Self Pickup" : "Home Delivery"}</span></div>
+          <div class="items">
+            ${(order.items || []).map((i) => `
+              <div class="row">
+                <span>${i.product_name || i.name} (${i.quantity}${i.unit || "unit"})</span>
+                <span>₹${Number((i.unit_price || i.price || 0) * i.quantity).toFixed(2)}</span>
               </div>
+            `).join("")}
+          </div>
+          <div class="row bold"><span>মোট টাকা:</span><span>₹${Number(order.total_amount).toFixed(2)}</span></div>
+          <div class="row"><span>পরিশোধিত:</span><span>₹${Number(order.paid_amount || 0).toFixed(2)}</span></div>
+          <div class="row bold" style="color: #c00;"><span>বাকি টাকা:</span><span>₹${Number(order.remaining_amount || 0).toFixed(2)}</span></div>
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // আসল ক্যাশ ও সেলস হিসাব (KPIs)
+  const kpis = useMemo(() => {
+    const totalCount = orders.length;
+    const deliveredOrders = orders.filter((o) => o.order_status === "delivered");
+    const deliveredSales = deliveredOrders.reduce((acc, o) => acc + Number(o.paid_amount || o.total_amount || 0), 0);
+    const totalRefund = orders
+      .filter((o) => o.order_status === "refund" || Number(o.refund_amount || 0) > 0)
+      .reduce((acc, o) => acc + Number(o.refund_amount || 0), 0);
+    const netSales = Math.max(0, deliveredSales - totalRefund);
+
+    return { totalCount, deliveredSales, totalRefund, netSales };
+  }, [orders]);
+
+  // ফিল্টার করা তালিকা (সকল স্ট্যাটাস ও আসল ৪টি মোড)
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      // ১. স্ট্যাটাস ফিল্টার
+      let matchStatus = true;
+      if (statusFilter === "current") matchStatus = o.order_status === "current";
+      else if (statusFilter === "out_for_delivery") matchStatus = o.order_status === "out_for_delivery";
+      else if (statusFilter === "delivered") matchStatus = o.order_status === "delivered";
+      else if (statusFilter === "pending") matchStatus = o.payment_status === "pending" || o.order_status === "pending";
+      else if (statusFilter === "refund") matchStatus = o.order_status === "refund" || Number(o.refund_amount || 0) > 0;
+      else if (statusFilter === "spam") matchStatus = o.order_status === "spam";
+
+      // ২. ডেলিভারি ও পেমেন্ট মোড ফিল্টার
+      const isHome = !o.delivery_type || o.delivery_type === "home" || o.delivery_type === "home_delivery";
+      const isPickup = o.delivery_type === "pickup" || o.delivery_type === "self_pickup";
+      const isFull = o.payment_type === "full" || (!o.payment_type && Number(o.remaining_amount || 0) <= 0);
+      const isAdvance = o.payment_type === "partial" || Number(o.remaining_amount || 0) > 0;
+
+      let matchDelivery = true;
+      if (deliveryFilter === "home_full") {
+        matchDelivery = isHome && isFull;
+      } else if (deliveryFilter === "home_advance") {
+        matchDelivery = isHome && isAdvance;
+      } else if (deliveryFilter === "self_full") {
+        matchDelivery = isPickup && isFull;
+      } else if (deliveryFilter === "self_advance") {
+        matchDelivery = isPickup && isAdvance;
+      }
+
+      return matchStatus && matchDelivery;
+    });
+  }, [orders, statusFilter, deliveryFilter]);
+
+  return (
+    <div className="space-y-4 max-w-5xl mx-auto pb-12">
+      {/* তারিখ বার ও পিকলিস্ট */}
+      <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-2.5">
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">📅 Date:</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="px-2 py-1 text-xs font-semibold border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 flex-1 min-w-0 max-w-[140px]"
+            />
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <button
+              onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
+              className="px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg border border-blue-200 hover:bg-blue-100"
+            >
+              Today
+            </button>
+            <button
+              onClick={() => {
+                const d = new Date();
+                d.setDate(d.getDate() - 1);
+                setSelectedDate(d.toISOString().split("T")[0]);
+              }}
+              className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200"
+            >
+              Yesterday
+            </button>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowPicklistModal(true)}
+          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition"
+        >
+          📋 Master Picklist
+        </button>
+      </div>
+
+      {/* ৪টি কার্ড (KPIs) */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
+        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          <p className="text-[11px] font-bold text-slate-500">Total Orders</p>
+          <p className="text-lg font-black text-slate-900 mt-0.5">{kpis.totalCount}</p>
+        </div>
+        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          <p className="text-[11px] font-bold text-blue-600">Delivered</p>
+          <p className="text-lg font-black text-blue-600 mt-0.5">₹{kpis.deliveredSales.toFixed(2)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+          <p className="text-[11px] font-bold text-rose-600">Total Refunds</p>
+          <p className="text-lg font-black text-rose-600 mt-0.5">- ₹{kpis.totalRefund.toFixed(2)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-2xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
+          <p className="text-[11px] font-bold text-emerald-800">Net Cash Sales</p>
+          <p className="text-lg font-black text-emerald-700 mt-0.5">₹{kpis.netSales.toFixed(2)}</p>
+        </div>
+      </div>
+
+      {/* ফিল্টার সেকশন (কাটা বন্ধ করতে min-w-max ও টাচ স্ক্রল) */}
+      <div className="space-y-2">
+        {/* ১. স্ট্যাটাস ফিল্টার বাটন */}
+        <div className="w-full overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 min-w-max px-1">
+            {[
+              { id: "all", label: "All Orders" },
+              { id: "current", label: "Current Order" },
+              { id: "out_for_delivery", label: "Out for Delivery" },
+              { id: "delivered", label: "Delivered" },
+              { id: "pending", label: "Pending Order" },
+              { id: "refund", label: "Refund" },
+              { id: "spam", label: "Spam" },
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setStatusFilter(tab.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition shrink-0 ${
+                  statusFilter === tab.id
+                    ? "bg-slate-900 text-white shadow-xs"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ২. ডেলিভারি ও পেমেন্ট মোড বাটন (আসল ৪টি মোড) */}
+        <div className="w-full overflow-x-auto no-scrollbar py-0.5">
+          <div className="flex items-center gap-1.5 min-w-max px-1">
+            {[
+              { id: "all", label: "All Modes" },
+              { id: "home_full", label: "🏠 Home Full" },
+              { id: "home_advance", label: "🏠 Home Advance" },
+              { id: "self_full", label: "🏪 Self Full" },
+              { id: "self_advance", label: "🏪 Self Advance" },
+            ].map((d) => (
+              <button
+                key={d.id}
+                onClick={() => setDeliveryFilter(d.id)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition shrink-0 ${
+                  deliveryFilter === d.id
+                    ? "bg-blue-600 text-white shadow-xs"
+                    : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+                }`}
+              >
+                {d.label}
+              </button>
             ))}
           </div>
         </div>
       </div>
-    );
-  }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <header className="bg-white shadow-sm">
-          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-            <Link href="/home" className="text-2xl font-bold text-blue-600">
-              {t("app_name")}
-            </Link>
-            <UserMenu />
-          </div>
-        </header>
-        <div className="max-w-3xl mx-auto px-4 py-12 text-center">
-          <p className="text-6xl mb-4">🔐</p>
-          <p className="text-gray-600 mb-6">
-            {lang === "bn"
-              ? "অর্ডার দেখতে সাইন ইন করুন"
-              : "Sign in to view your orders"}
-          </p>
-          <Link
-            href="/home"
-            className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition"
-          >
-            {t("sign_in")}
-          </Link>
+      {/* অর্ডার তালিকা */}
+      {loading ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-slate-200 text-xs">
+          Loading orders...
         </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm sticky top-0 z-10">
-        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <Link href="/home" className="text-2xl font-bold text-blue-600">
-            {t("app_name")}
-          </Link>
-          <UserMenu />
+      ) : filteredOrders.length === 0 ? (
+        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-slate-200 text-xs">
+          No orders found in this filter.
         </div>
-      </header>
+      ) : (
+        <div className="space-y-2.5">
+          {filteredOrders.map((order) => (
+            <OrderCard
+              key={order.id}
+              order={order}
+              isExpanded={expandedOrderId === order.id}
+              onToggleExpand={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+              actionLoading={actionLoading}
+              imageLoading={imageLoading}
+              onStatusChange={handleStatusChange}
+              onApprovePayment={handleApprovePayment}
+              onRejectClick={(ord) => setRejectingOrder(ord)}
+              onViewScreenshot={handleViewScreenshot}
+              onRefundClick={(ord) => setRefundOrder(ord)}
+              onPrintSlip={handlePrintSlip}
+            />
+          ))}
+        </div>
+      )}
 
-      <div className="max-w-3xl mx-auto px-4 py-6">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">
-          {t("my_orders")}
-        </h1>
+      {/* মোডালসমূহ */}
+      <OrderModals
+        orders={orders}
+        selectedDate={selectedDate}
+        showPicklist={showPicklistModal}
+        onClosePicklist={() => setShowPicklistModal(false)}
+        rejectingOrder={rejectingOrder}
+        onCloseReject={() => setRejectingOrder(null)}
+        actionLoading={actionLoading}
+        setActionLoading={setActionLoading}
+        zoomedImage={zoomedImage}
+        onCloseZoom={() => setZoomedImage(null)}
+        onSuccess={fetchOrders}
+      />
 
-        {orders.length === 0 ? (
-          <div className="bg-white rounded-2xl p-12 text-center">
-            <p className="text-6xl mb-4">📦</p>
-            <p className="text-gray-600 mb-6">
-              {lang === "bn" ? "এখনো কোনো অর্ডার নেই" : "No orders yet"}
-            </p>
-            <Link
-              href="/home"
-              className="inline-block bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition"
-            >
-              {lang === "bn" ? "কেনাকাটা শুরু করুন" : "Start Shopping"}
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {orders.map((o) => {
-              const status = getStatusInfo(o.order_status);
-
-              const remainingAmount = (
-                o.total_amount - (o.paid_amount || 0)
-              ).toFixed(2);
-
-              const isPartialAdvancePaid =
-                o.payment_type === "partial" && (o.paid_amount || 0) > 0;
-
-              // অর্ডার আইটেম পার্সিং
-              let orderItems: any[] = [];
-              if (Array.isArray(o.order_items)) {
-                orderItems = o.order_items;
-              } else if (Array.isArray(o.items)) {
-                orderItems = o.items;
-              } else if (typeof o.items === "string") {
-                try {
-                  orderItems = JSON.parse(o.items);
-                } catch {
-                  orderItems = [];
-                }
-              }
-
-              return (
-                <div
-                  key={o.id}
-                  className="bg-white rounded-xl p-4 border border-gray-200 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <p className="font-bold text-gray-800">
-                        {o.order_number}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {new Date(o.created_at).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                    <span
-                      className={`text-xs px-3 py-1 rounded-full font-medium ${status.color}`}
-                    >
-                      {status.label}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 mb-3 text-sm">
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        {lang === "bn" ? "ডেলিভারি" : "Delivery"}
-                      </p>
-                      <p className="font-medium text-gray-800">
-                        {o.delivery_type === "self_pickup"
-                          ? t("self_pickup")
-                          : t("home_delivery")}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-gray-500">
-                        {lang === "bn" ? "পেমেন্ট" : "Payment"}
-                      </p>
-                      <p className="font-medium text-gray-800">
-                        {o.payment_type === "full"
-                          ? t("full_payment")
-                          : t("partial_payment")}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* সম্পূর্ণ ডাইনামিক প্রোডাক্ট ও থাম্বনেইল ডিসপ্লে */}
-                  {orderItems.length > 0 && (
-                    <div className="border-t border-b border-gray-100 py-3 mb-3 space-y-2.5">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-                        {lang === "bn" ? "অর্ডার করা আইটেম" : "Ordered Items"}
-                      </p>
-                      <div className="space-y-2">
-                        {orderItems.map((item: any, idx: number) => {
-                          const itemName = resolveItemName(item, lang);
-                          const itemImage = resolveImageUrl(item);
-                          const itemQty =
-                            item.quantity || item.qty || item.count || 1;
-                          const itemPrice = item.price || item.unit_price || 0;
-                          const itemTotal = (itemPrice * itemQty).toFixed(2);
-
-                          return (
-                            <div
-                              key={item.id || idx}
-                              className="flex items-center justify-between gap-3 text-sm"
-                            >
-                              <div className="flex items-center gap-3 min-w-0">
-                                {/* প্রোডাক্ট থাম্বনেইল */}
-                                {itemImage ? (
-                                  <img
-                                    src={itemImage}
-                                    alt={itemName}
-                                    className="w-11 h-11 object-cover rounded-lg border border-gray-100 bg-gray-50 flex-shrink-0"
-                                    onError={(e) => {
-                                      // ছবি লোড না হলে আইকনে ফলব্যাক করবে
-                                      (e.target as HTMLElement).style.display =
-                                        "none";
-                                    }}
-                                  />
-                                ) : (
-                                  <div className="w-11 h-11 bg-gray-100 rounded-lg flex items-center justify-center text-lg flex-shrink-0">
-                                    🛍️
-                                  </div>
-                                )}
-
-                                {/* নাম ও পরিমাণ */}
-                                <div className="min-w-0">
-                                  <p className="text-gray-800 font-medium truncate">
-                                    {itemName}
-                                  </p>
-                                  <p className="text-xs text-gray-500">
-                                    ₹{itemPrice} × {itemQty}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* আইটেম সাবটোটাল */}
-                              <span className="text-gray-800 font-semibold flex-shrink-0">
-                                ₹{itemTotal}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="text-gray-600">{t("total")}</span>
-                      <span className="font-bold text-gray-800">
-                        ₹{o.total_amount}
-                      </span>
-                    </div>
-                    {o.payment_type === "partial" && (
-                      <>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-green-700">Advance</span>
-                          <span className="font-medium text-green-700">
-                            ₹{o.partial_payment_amount}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-xs">
-                          <span className="text-orange-700">COD</span>
-                          <span className="font-medium text-orange-700">
-                            ₹
-                            {(
-                              o.total_amount - o.partial_payment_amount
-                            ).toFixed(2)}
-                          </span>
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {o.order_status === "refund" && o.refund_reason && (
-                    <div className="bg-purple-50 border border-purple-200 rounded-lg p-2 mb-3 text-xs">
-                      <p className="text-purple-800">
-                        <strong>
-                          {lang === "bn" ? "ফেরত কারণ" : "Refund Reason"}:
-                        </strong>{" "}
-                        {o.refund_reason}
-                      </p>
-                      {o.refund_amount && (
-                        <p className="text-purple-800 mt-0.5">
-                          <strong>
-                            {lang === "bn" ? "পরিমাণ" : "Amount"}:
-                          </strong>{" "}
-                          ₹{o.refund_amount}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Payment Button / COD Info */}
-                  {(o.paid_amount || 0) < o.total_amount && (
-                    <>
-                      {isPartialAdvancePaid ? (
-                        <button
-                          disabled
-                          className="block w-full text-center bg-gray-300 text-gray-600 font-semibold py-3 rounded-lg text-sm cursor-not-allowed"
-                        >
-                          {lang === "bn"
-                            ? `💵 বাকি ₹${remainingAmount} Cash on Delivery তে পরিশোধ করুন`
-                            : `💵 Remaining ₹${remainingAmount} to be paid via Cash on Delivery`}
-                        </button>
-                      ) : (
-                        <Link
-                          href={`/payment/${o.id}`}
-                          className="block w-full text-center bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg text-sm transition"
-                        >
-                          {o.payment_type === "full"
-                            ? lang === "bn"
-                              ? "সম্পূর্ণ পেমেন্ট করুন"
-                              : "Complete Payment"
-                            : lang === "bn"
-                            ? "Advance পরিশোধ করুন"
-                            : "Pay Advance"}
-                        </Link>
-                      )}
-                    </>
-                  )}
-
-                  {/* Fully paid indicator */}
-                  {(o.paid_amount || 0) >= o.total_amount &&
-                    o.payment_status === "success" && (
-                      <div className="block w-full text-center bg-green-50 border border-green-200 text-green-700 font-medium py-2.5 rounded-lg text-sm">
-                        {lang === "bn" ? "✅ পরিশোধিত" : "✅ Paid"}
-                      </div>
-                    )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {/* রিফান্ড মোডাল */}
+      {refundOrder && (
+        <RefundModal
+          order={refundOrder}
+          onClose={() => setRefundOrder(null)}
+          onSubmit={submitRefund}
+          saving={savingRefund}
+        />
+      )}
     </div>
   );
-}
-  
+  }
+    
