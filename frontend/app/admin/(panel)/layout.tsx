@@ -1,32 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// প্রতিদিনের অপারেশনাল কাজ (Daily Live Flow)
-const PRIMARY_NAV = [
-  { name: "ড্যাশবোর্ড (হিসাব)", href: "/admin/dashboard", icon: "📊" },
+// আপনার দরকারি ৪টি মূল মেনু
+const MENU_ITEMS = [
   { name: "অর্ডার খাতা (Orders)", href: "/admin/orders", icon: "📦" },
   { name: "পণ্য ও স্টক (Products)", href: "/admin/products", icon: "🛍️" },
-];
-
-// দোকান সেটিংস ও ব্যাকঅফিস (দরকার ছাড়া প্রতিদিন খোলার প্রয়োজন নেই)
-const SECONDARY_NAV = [
-  { name: "ক্যাটাগরি", href: "/admin/categories", icon: "📁" },
-  { name: "ব্যানার", href: "/admin/banners", icon: "🖼️" },
-  { name: "কাস্টমার তালিকা", href: "/admin/customers", icon: "👥" },
-  { name: "পেমেন্ট সেটিংস", href: "/admin/payments", icon: "💳" },
-  { name: "দোকান সেটিংস", href: "/admin/settings", icon: "⚙️" },
-  { name: "অ্যাডমিন স্টাফ", href: "/admin/admins", icon: "👤" },
-  { name: "টেকনিক্যাল লগ", href: "/admin/webhook-logs", icon: "🔗" },
-  { name: "প্রোফাইল", href: "/admin/profile", icon: "🔑" },
+  { name: "ক্যাটাগরি (Categories)", href: "/admin/categories", icon: "📁" },
+  { name: "দোকান সেটিংস (Settings)", href: "/admin/settings", icon: "⚙️" },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [showMoreSettings, setShowMoreSettings] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
@@ -39,10 +27,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
       {/* মোবাইল টপবার */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <button
           onClick={() => setSidebarOpen(true)}
-          className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 text-lg"
+          className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 text-xl"
           aria-label="Open Menu"
         >
           ☰
@@ -59,7 +47,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {/* মোবাইল ব্যাকড্রপ */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-2xs"
+          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-xs"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -70,11 +58,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         }`}
       >
-        {/* ব্র্যান্ড হেডার */}
+        {/* ব্র্যান্ড লোগো */}
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-white tracking-wide">Quickpin</h2>
-            <p className="text-[10px] text-slate-400">সহজ এডমিন ও খতিয়ান</p>
+            <p className="text-[10px] text-slate-400">সহজ অর্ডার ও স্টক ম্যানেজমেন্ট</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -84,74 +72,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </button>
         </div>
 
-        {/* স্ক্রোলযোগ্য নেভিগেশন */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-4">
-          {/* জোন ১: মূল অপারেশন */}
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1">
-              দৈনন্দিন কাজ (Operations)
-            </p>
-            <nav className="space-y-1">
-              {PRIMARY_NAV.map((item) => {
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                      isActive
-                        ? "bg-blue-600 text-white shadow-xs"
-                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                    }`}
-                  >
-                    <span>{item.icon}</span>
-                    <span>{item.name}</span>
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
-
-          {/* জোন ২: ড্রপডাউনে গোছানো ব্যাকঅফিস সেটিংস */}
-          <div className="pt-2 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={() => setShowMoreSettings(!showMoreSettings)}
-              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition"
-            >
-              <span className="flex items-center gap-2">
-                <span>⚙️</span> দোকান ও সেটিংস
-              </span>
-              <span className="text-[10px]">{showMoreSettings ? "▲" : "▼"}</span>
-            </button>
-
-            {showMoreSettings && (
-              <nav className="mt-1 space-y-0.5 pl-2">
-                {SECONDARY_NAV.map((item) => {
-                  const isActive = pathname === item.href;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setSidebarOpen(false)}
-                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition ${
-                        isActive
-                          ? "bg-slate-800 text-blue-400 font-semibold"
-                          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                      }`}
-                    >
-                      <span>{item.icon}</span>
-                      <span>{item.name}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-            )}
-          </div>
+        {/* ছিমছাম নেভিগেশন লিস্ট */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">
+            মূল মেনু
+          </p>
+          <nav className="space-y-1.5">
+            {MENU_ITEMS.map((item) => {
+              const isActive = pathname === item.href;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold transition ${
+                    isActive
+                      ? "bg-blue-600 text-white shadow-xs"
+                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                  }`}
+                >
+                  <span className="text-base">{item.icon}</span>
+                  <span>{item.name}</span>
+                </Link>
+              );
+            })}
+          </nav>
         </div>
 
-        {/* সাইডবার ফুটার */}
+        {/* সাইডবার ফুটার (ডেস্কটপ লগআউট) */}
         <div className="p-3 border-t border-slate-800 hidden md:block">
           <button
             onClick={handleLogout}
@@ -164,7 +112,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       {/* পেজ কনটেন্ট */}
       <main className="flex-1 overflow-x-hidden min-h-screen">
-        {children}
+        <Suspense
+          fallback={
+            <div className="p-6 text-xs text-slate-400 flex items-center gap-2">
+              <span className="animate-spin">⏳</span> লোড হচ্ছে...
+            </div>
+          }
+        >
+          {children}
+        </Suspense>
       </main>
     </div>
   );
