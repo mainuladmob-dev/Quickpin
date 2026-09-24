@@ -2,20 +2,20 @@
 
 import { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Order } from "./page";
 
+// './page' থেকে ইমপোর্ট করার দরকার নেই, সরাসরি any টাইপ ব্যবহার করা হলো
 type OrderModalsProps = {
-  orders: Order[];
-  selectedDate: string;
+  orders: any[];
+  selectedDate?: string;
   showPicklist: boolean;
   onClosePicklist: () => void;
-  rejectingOrder: Order | null;
+  rejectingOrder: any;
   onCloseReject: () => void;
-  actionLoading: boolean;
-  setActionLoading: (loading: boolean) => void;
-  zoomedImage: string | null;
+  actionLoading?: boolean;
+  setActionLoading?: (loading: boolean) => void;
+  zoomedImage?: string | null;
   onCloseZoom: () => void;
-  onSuccess: () => void;
+  onSuccess?: () => void;
 };
 
 export default function OrderModals({
