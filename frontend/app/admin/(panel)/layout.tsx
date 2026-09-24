@@ -1,15 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
-export default function AdminLayout({
+export default function AdminPanelLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const router = useRouter();
   const pathname = usePathname();
   const supabase = createClient();
 
@@ -18,30 +19,18 @@ export default function AdminLayout({
   const [adminRole, setAdminRole] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // ১. ইউজার লগইন পেজে আছে কি না চেক
   const isLoginPage = pathname === "/admin/login";
 
-  const navItems = [
-    { name: "Orders (All-in-One)", href: "/admin/orders", icon: "📦" },
-    { name: "Products", href: "/admin/products", icon: "🛍️" },
-    { name: "Categories", href: "/admin/categories", icon: "📂" },
-    { name: "Banners", href: "/admin/banners", icon: "🖼️" },
-    { name: "Customers", href: "/admin/customers", icon: "👥" },
-    { name: "Settings", href: "/admin/settings", icon: "⚙️" },
-  ];
-
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
+    let mounted = true;
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const checkAuthAndBypass = async () => {
+    const checkAdmin = async () => {
       const {
         data: { session },
       } = await supabase.auth.getSession();
 
-      // ১. যদি ইউজার লগইন পেজে আসে কিন্তু সে হোমপেজ থেকে অলরেডি লগইন করা থাকে:
+      // যদি ইউজার লগইন পেজে থাকে:
       if (isLoginPage) {
         if (session?.user) {
           const { data: profile } = await supabase
@@ -50,23 +39,23 @@ export default function AdminLayout({
             .eq("id", session.user.id)
             .maybeSingle();
 
+          // লগইন করা থাকলে বাড়তি লগইন ফর্ম না দেখিয়ে সরাসরি ভেতরে নিয়ে যাবে
           if (
-            isMounted &&
+            mounted &&
             profile &&
             ["admin", "super_admin", "staff"].includes(profile.role)
           ) {
-            // বাড়তি লগইন পেজটি আর দেখাবেই না—সরাসরি অর্ডারের ভেতরে পাঠিয়ে দেবে
-            window.location.replace("/admin/orders");
+            router.replace("/admin/orders");
             return;
           }
         }
-        if (isMounted) setLoading(false);
+        if (mounted) setLoading(false);
         return;
       }
 
-      // ২. সাধারণ অ্যাডমিন পেজের জন্য গার্ড:
+      // যদি ইউজার সাধারণ অ্যাডমিন পেজে থাকে (অথেনটিকেশন গার্ড):
       if (!session?.user) {
-        if (isMounted) window.location.replace("/admin/login");
+        if (mounted) router.replace("/admin/login");
         return;
       }
 
@@ -76,11 +65,14 @@ export default function AdminLayout({
         .eq("id", session.user.id)
         .maybeSingle();
 
-      if (!isMounted) return;
+      if (!mounted) return;
 
-      if (!profile || !["admin", "super_admin", "staff"].includes(profile.role)) {
+      if (
+        !profile ||
+        !["admin", "super_admin", "staff"].includes(profile.role)
+      ) {
         await supabase.auth.signOut();
-        window.location.replace("/admin/login");
+        router.replace("/admin/login");
         return;
       }
 
@@ -89,18 +81,37 @@ export default function AdminLayout({
       setLoading(false);
     };
 
-    checkAuthAndBypass();
+    checkAdmin();
 
     return () => {
-      isMounted = false;
+      mounted = false;
     };
-  }, [isLoginPage, supabase]);
+  }, [pathname, isLoginPage, router, supabase]);
 
-  // লগইন পেজ হলে হেডার/সাইডবার সম্পূর্ণ বন্ধ থাকবে
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace("/admin/login");
+  };
+
+  const menuItems = [
+    { name: "Dashboard", href: "/admin/dashboard", icon: "📊" },
+    { name: "Orders", href: "/admin/orders", icon: "📦" },
+    { name: "Products", href: "/admin/products", icon: "🛍️" },
+    { name: "Categories", href: "/admin/categories", icon: "📂" },
+    { name: "Banners", href: "/admin/banners", icon: "🖼️" },
+    { name: "Admins", href: "/admin/admins", icon: "👤" },
+    { name: "Customers", href: "/admin/customers", icon: "👥" },
+    { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "🔗" },
+    { name: "Payments", href: "/admin/payments", icon: "💳" },
+    { name: "Settings", href: "/admin/settings", icon: "⚙️" },
+    { name: "My Profile", href: "/admin/profile", icon: "🔑" },
+  ];
+
+  // ২. লগইন পেজ হলে সাইডবার ও হেডার ছাড়া একদম ফ্রেশ ফর্ম দেখাবে
   if (isLoginPage) {
     if (loading) {
       return (
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="min-h-screen flex items-center justify-center bg-slate-900">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
         </div>
       );
@@ -108,118 +119,77 @@ export default function AdminLayout({
     return <>{children}</>;
   }
 
-  // ড্যাশবোর্ড পেজের লোডিং স্পিনার
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="flex items-center gap-3 text-slate-600">
-          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-semibold">অ্যাডমিন প্যানেল লোড হচ্ছে...</p>
-        </div>
+        <p className="text-gray-500">Loading admin panel...</p>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-slate-100 flex">
-      {/* Sidebar Drawer */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-slate-900 text-white flex flex-col justify-between transform transition-transform duration-200 ease-in-out ${
+        className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white transform transition-transform duration-200 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0 md:static md:inset-auto shadow-2xl md:shadow-none`}
+        } md:translate-x-0 md:static md:inset-auto`}
       >
-        <div>
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-xl">⚡</span>
-              <div>
-                <h1 className="text-lg font-black tracking-tight text-white leading-tight">
-                  Quickpin
-                </h1>
-                <p className="text-[10px] text-slate-400">Admin Control Panel</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="md:hidden text-slate-400 hover:text-white text-lg p-1"
-            >
-              ✕
-            </button>
-          </div>
-
-          <nav className="p-3 space-y-1 overflow-y-auto">
-            <p className="px-3 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
-              ম্যানেজমেন্ট
-            </p>
-            {navItems.map((item) => {
-              const isActive =
-                pathname === item.href || pathname?.startsWith(item.href + "/");
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
-                    isActive
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  <span className="text-base">{item.icon}</span>
-                  <span>{item.name}</span>
-                </Link>
-              );
-            })}
-          </nav>
+        <div className="p-5 border-b border-slate-700">
+          <h1 className="text-xl font-bold text-blue-400">Quickpin</h1>
+          <p className="text-xs text-slate-400 mt-1">Admin Panel</p>
         </div>
 
-        <div className="p-3 border-t border-slate-800">
-          <Link
-            href="/"
-            className="w-full flex items-center justify-center gap-2 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-bold transition border border-slate-700"
-          >
-            🌐 View Storefront
-          </Link>
-        </div>
+        <nav className="p-4 space-y-1">
+          {menuItems.map((item) => {
+            const isActive = pathname?.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setSidebarOpen(false)}
+                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-slate-300 hover:bg-slate-800"
+                }`}
+              >
+                <span>{item.icon}</span>
+                <span className="text-sm font-medium">{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </aside>
 
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-2xs transition-opacity"
-        />
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+        ></div>
       )}
 
-      {/* Main Area */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
-          <div className="px-4 py-2.5 flex items-center justify-between">
+        <header className="bg-white shadow-sm sticky top-0 z-20">
+          <div className="px-4 py-3 flex items-center justify-between">
             <button
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden p-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-lg leading-none active:scale-95 transition"
+              className="md:hidden text-2xl text-gray-600"
             >
               ☰
             </button>
 
-            <div className="hidden md:block">
-              <span className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
-                ⚡ Live Operations Hub
-              </span>
-            </div>
+            <div className="hidden md:block"></div>
 
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-xs font-bold text-slate-800">{adminName}</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">
+                <p className="text-sm font-medium text-gray-800">{adminName}</p>
+                <p className="text-xs text-gray-500 capitalize">
                   {adminRole.replace("_", " ")}
                 </p>
               </div>
               <button
-                onClick={async () => {
-                  await supabase.auth.signOut();
-                  window.location.replace("/admin/login");
-                }}
-                className="text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-600 px-3 py-1.5 rounded-xl transition border border-rose-200"
+                onClick={handleLogout}
+                className="text-sm bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg transition"
               >
                 Logout
               </button>
@@ -227,9 +197,7 @@ export default function AdminLayout({
           </div>
         </header>
 
-        <main className="flex-1 p-3 md:p-6 max-w-7xl w-full mx-auto">
-          {children}
-        </main>
+        <main className="flex-1 p-4 md:p-6">{children}</main>
       </div>
     </div>
   );
