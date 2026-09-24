@@ -75,7 +75,7 @@ export default function ProductDetailsPage() {
     };
 
     fetchData();
-  }, [id, supabase]);
+  }, [id]);
 
   const getName = (item: { name_bn: string; name_en: string }) =>
     lang === "bn" ? item.name_bn : item.name_en;
@@ -88,7 +88,7 @@ export default function ProductDetailsPage() {
 
     // Force Google Sign In if not logged in
     if (!user) {
-      setMessage("Sign in required...");
+      setMessage(lang === "bn" ? "সাইন ইন করা আবশ্যক..." : "Sign in required...");
       await signInWithGoogle();
       return;
     }
@@ -112,15 +112,25 @@ export default function ProductDetailsPage() {
     let error;
 
     if (existing) {
-      // Update quantity
       const newQty = existing.quantity + quantity;
+
+      // অতিরিক্ত স্টক সিলেক্ট করা আটকানোর লজিক
+      if (newQty > product.stock) {
+        setAdding(false);
+        setMessage(
+          lang === "bn"
+            ? `স্টকে আর মাত্র ${product.stock - existing.quantity}টি যোগ করা সম্ভব`
+            : `Only ${product.stock - existing.quantity} more can be added`
+        );
+        return;
+      }
+
       const result = await supabase
         .from("cart")
         .update({ quantity: newQty })
         .eq("id", existing.id);
       error = result.error;
     } else {
-      // Insert new
       const result = await supabase.from("cart").insert({
         user_id: user.id,
         product_id: product.id,
@@ -189,7 +199,7 @@ export default function ProductDetailsPage() {
     );
   }
 
-  const hasImages = product.images && product.images.length > 0;
+  const hasImages = Array.isArray(product.images) && product.images.length > 0;
   const currentImage = hasImages ? product.images[activeImage] : null;
   const inStock = product.stock > 0;
 
@@ -369,3 +379,4 @@ export default function ProductDetailsPage() {
     </div>
   );
 }
+
