@@ -118,6 +118,41 @@ export default function AdminOrdersPage() {
     }
   };
 
+  // রিফান্ড সাবমিট হ্যান্ডলার (RefundModal props এর জন্য)
+  const handleRefundSubmit = async (data: {
+    reason: string;
+    amount: number;
+    method: string;
+    note: string;
+    product_name?: string;
+    transaction_ref?: string;
+    customer_upi?: string;
+  }) => {
+    if (!refundingOrder) return;
+    setActionLoading(true);
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "refund",
+          refund_amount: data.amount,
+          status_changed_at: new Date().toISOString(),
+        })
+        .eq("id", refundingOrder.id);
+
+      if (error) {
+        alert("রিফান্ড সম্পন্ন করা যায়নি: " + error.message);
+      } else {
+        setRefundingOrder(null);
+        fetchOrders();
+      }
+    } catch (err) {
+      console.error("রিফান্ড হ্যান্ডলার এরর:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // ক্যাশ মেমো প্রিন্ট
   const handlePrintSlip = (order: Order) => {
     const printWin = window.open("", "_blank");
@@ -275,7 +310,7 @@ export default function AdminOrdersPage() {
         </button>
       </div>
 
-      {/* ২. ৪টি ডেলিভারি মোড বাটন (কোনো বাটন যাতে না কাটে তার জন্য হরিজন্টাল স্ক্রল) */}
+      {/* ২. ৪টি ডেলিভারি মোড বাটন */}
       <div className="overflow-x-auto scrollbar-none py-0.5">
         <div className="flex items-center gap-1.5 min-w-max">
           <button
@@ -420,17 +455,14 @@ export default function AdminOrdersPage() {
         onSuccess={fetchOrders}
       />
 
-            {refundingOrder && (
+      {refundingOrder && (
         <RefundModal
           order={refundingOrder}
-          onClose={() => {
-            setRefundingOrder(null);
-            fetchOrders();
-          }}
+          onClose={() => setRefundingOrder(null)}
+          onSubmit={handleRefundSubmit}
+          saving={actionLoading}
         />
       )}
     </div>
   );
-}
-
-
+              }
