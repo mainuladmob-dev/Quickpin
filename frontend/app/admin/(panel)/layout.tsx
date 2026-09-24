@@ -1,233 +1,171 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// Navigation Links Component with Date Persistence
-function NavigationMenu({
-  onItemClick,
-}: {
-  onItemClick: () => void;
-}) {
+// প্রতিদিনের অপারেশনাল কাজ (Daily Live Flow)
+const PRIMARY_NAV = [
+  { name: "ড্যাশবোর্ড (হিসাব)", href: "/admin/dashboard", icon: "📊" },
+  { name: "অর্ডার খাতা (Orders)", href: "/admin/orders", icon: "📦" },
+  { name: "পণ্য ও স্টক (Products)", href: "/admin/products", icon: "🛍️" },
+];
+
+// দোকান সেটিংস ও ব্যাকঅফিস (দরকার ছাড়া প্রতিদিন খোলার প্রয়োজন নেই)
+const SECONDARY_NAV = [
+  { name: "ক্যাটাগরি", href: "/admin/categories", icon: "📁" },
+  { name: "ব্যানার", href: "/admin/banners", icon: "🖼️" },
+  { name: "কাস্টমার তালিকা", href: "/admin/customers", icon: "👥" },
+  { name: "পেমেন্ট সেটিংস", href: "/admin/payments", icon: "💳" },
+  { name: "দোকান সেটিংস", href: "/admin/settings", icon: "⚙️" },
+  { name: "অ্যাডমিন স্টাফ", href: "/admin/admins", icon: "👤" },
+  { name: "টেকনিক্যাল লগ", href: "/admin/webhook-logs", icon: "🔗" },
+  { name: "প্রোফাইল", href: "/admin/profile", icon: "🔑" },
+];
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showMoreSettings, setShowMoreSettings] = useState(false);
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const currentDate = searchParams.get("date");
-
-  // Operational & General Menu Structure
-  const menuGroups = [
-    {
-      groupTitle: "OPERATIONS",
-      items: [
-        { name: "Dashboard", href: "/admin/dashboard", icon: "📊" },
-        { name: "Orders", href: "/admin/orders", icon: "📦" },
-        { name: "Deliveries", href: "/admin/deliveries", icon: "🚚" },
-        { name: "Refunds", href: "/admin/refunds", icon: "🔄" },
-        { name: "Accounts", href: "/admin/accounts", icon: "💰" },
-      ],
-    },
-    {
-      groupTitle: "STORE & CATALOG",
-      items: [
-        { name: "Products", href: "/admin/products", icon: "🛍️" },
-        { name: "Categories", href: "/admin/categories", icon: "📂" },
-        { name: "Banners", href: "/admin/banners", icon: "🖼️" },
-        { name: "Customers", href: "/admin/customers", icon: "👥" },
-      ],
-    },
-    {
-      groupTitle: "FINANCE & SYSTEM",
-      items: [
-        { name: "Payments", href: "/admin/payments", icon: "💳" },
-        { name: "Admins", href: "/admin/admins", icon: "👤" },
-        { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "🔗" },
-        { name: "Settings", href: "/admin/settings", icon: "⚙️" },
-        { name: "My Profile", href: "/admin/profile", icon: "🔑" },
-      ],
-    },
-  ];
-
-  return (
-    <nav className="p-4 space-y-5 overflow-y-auto max-h-[calc(100vh-140px)]">
-      {menuGroups.map((group) => (
-        <div key={group.groupTitle} className="space-y-1">
-          <p className="px-4 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
-            {group.groupTitle}
-          </p>
-          {group.items.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + "/");
-
-            // Daily Operations pages maintain date synchronization
-            const isOperationsRoute = [
-              "/admin/orders",
-              "/admin/deliveries",
-              "/admin/refunds",
-              "/admin/accounts",
-            ].includes(item.href);
-
-            const targetHref =
-              isOperationsRoute && currentDate
-                ? `${item.href}?date=${currentDate}`
-                : item.href;
-
-            return (
-              <Link
-                key={item.href}
-                href={targetHref}
-                onClick={onItemClick}
-                className={`flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium transition ${
-                  isActive
-                    ? "bg-blue-600 text-white shadow-sm"
-                    : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <span className="text-base">{item.icon}</span>
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-        </div>
-      ))}
-    </nav>
-  );
-}
-
-export default function AdminPanelLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
   const router = useRouter();
   const supabase = createClient();
-
-  const [loading, setLoading] = useState(true);
-  const [adminName, setAdminName] = useState("");
-  const [adminRole, setAdminRole] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        router.push("/admin/login");
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("name, role")
-        .eq("id", user.id)
-        .single();
-
-      if (
-        !profile ||
-        !["admin", "super_admin", "staff"].includes(profile.role)
-      ) {
-        await supabase.auth.signOut();
-        router.push("/admin/login");
-        return;
-      }
-
-      setAdminName(profile.name || user.email || "Admin");
-      setAdminRole(profile.role);
-      setLoading(false);
-    };
-
-    checkAdmin();
-  }, [router, supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/admin/login");
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="flex items-center gap-3 text-slate-600">
-          <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm font-medium">Loading admin panel...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-100 flex">
-      {/* Left Sidebar */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 w-64 bg-slate-900 text-white flex flex-col transform transition-transform duration-200 ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
-        } md:translate-x-0 md:static md:inset-auto`}
-      >
-        <div className="p-5 border-b border-slate-800">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-xl font-black tracking-tight text-blue-400">Quickpin</h1>
-              <p className="text-xs text-slate-400 mt-0.5">Admin Management</p>
-            </div>
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="md:hidden text-slate-400 hover:text-white text-xl"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* মোবাইল টপবার */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 text-lg"
+          aria-label="Open Menu"
+        >
+          ☰
+        </button>
+        <span className="font-bold text-slate-900 tracking-tight">Quickpin Admin</span>
+        <button
+          onClick={handleLogout}
+          className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 rounded-lg border border-rose-100"
+        >
+          Logout
+        </button>
+      </header>
 
-        <Suspense fallback={<div className="p-4 text-xs text-slate-500">Loading navigation...</div>}>
-          <NavigationMenu onItemClick={() => setSidebarOpen(false)} />
-        </Suspense>
-      </aside>
-
-      {/* Backdrop for mobile */}
+      {/* মোবাইল ব্যাকড্রপ */}
       {sidebarOpen && (
         <div
+          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-2xs"
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-xs"
         />
       )}
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
-          <div className="px-4 py-3 flex items-center justify-between">
+      {/* সাইডবার প্যানেল */}
+      <aside
+        className={`fixed md:sticky top-0 h-screen w-64 bg-slate-900 text-white flex flex-col z-50 transition-transform duration-200 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
+      >
+        {/* ব্র্যান্ড হেডার */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-white tracking-wide">Quickpin</h2>
+            <p className="text-[10px] text-slate-400">সহজ এডমিন ও খতিয়ান</p>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-slate-400 hover:text-white text-lg p-1"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* স্ক্রোলযোগ্য নেভিগেশন */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          {/* জোন ১: মূল অপারেশন */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1">
+              দৈনন্দিন কাজ (Operations)
+            </p>
+            <nav className="space-y-1">
+              {PRIMARY_NAV.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                      isActive
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* জোন ২: ড্রপডাউনে গোছানো ব্যাকঅফিস সেটিংস */}
+          <div className="pt-2 border-t border-slate-800">
             <button
-              onClick={() => setSidebarOpen(true)}
-              className="md:hidden p-2 rounded-md hover:bg-slate-100 text-slate-700 text-xl"
+              type="button"
+              onClick={() => setShowMoreSettings(!showMoreSettings)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition"
             >
-              ☰
+              <span className="flex items-center gap-2">
+                <span>⚙️</span> দোকান ও সেটিংস
+              </span>
+              <span className="text-[10px]">{showMoreSettings ? "▲" : "▼"}</span>
             </button>
 
-            <div className="hidden md:block">
-              <span className="text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">
-                Live Operations Engine
-              </span>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-semibold text-slate-800">{adminName}</p>
-                <p className="text-[11px] text-slate-500 uppercase tracking-wider font-medium">
-                  {adminRole.replace("_", " ")}
-                </p>
-              </div>
-              <button
-                onClick={handleLogout}
-                className="text-xs font-medium bg-red-50 hover:bg-red-100 text-red-600 px-3.5 py-2 rounded-lg transition border border-red-200"
-              >
-                Logout
-              </button>
-            </div>
+            {showMoreSettings && (
+              <nav className="mt-1 space-y-0.5 pl-2">
+                {SECONDARY_NAV.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition ${
+                        isActive
+                          ? "bg-slate-800 text-blue-400 font-semibold"
+                          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            )}
           </div>
-        </header>
+        </div>
 
-        <main className="flex-1 p-4 md:p-6 max-w-7xl w-full mx-auto">{children}</main>
-      </div>
+        {/* সাইডবার ফুটার */}
+        <div className="p-3 border-t border-slate-800 hidden md:block">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-rose-400 bg-rose-950/40 hover:bg-rose-900/50 rounded-xl border border-rose-900/50 transition"
+          >
+            🚪 Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* পেজ কনটেন্ট */}
+      <main className="flex-1 overflow-x-hidden min-h-screen">
+        {children}
+      </main>
     </div>
   );
-        }
+}
