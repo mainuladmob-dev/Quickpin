@@ -79,3 +79,4 @@ export function useUser() {
     refreshProfile: () => user && fetchProfile(user.id),
   };
 }
+  
