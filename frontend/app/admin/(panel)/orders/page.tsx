@@ -11,15 +11,15 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // তারিখ ফিল্টার
+  // Date Filters
   const todayStr = new Date().toISOString().split("T")[0];
   const [selectedDate, setSelectedDate] = useState<string>(todayStr);
 
-  // স্ট্যাটাস ও ডেলিভারি মোড ফিল্টার
+  // Status & Delivery Mode Filters
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all");
 
-  // মডাল ও কার্ড স্টেট
+  // Modal & Card State
   const [expandedOrderId, setExpandedOrderId] = useState<string | number | null>(null);
   const [showPicklist, setShowPicklist] = useState(false);
   const [rejectingOrder, setRejectingOrder] = useState<any | null>(null);
@@ -27,7 +27,7 @@ export default function OrdersPage() {
 
   const supabase = createClient();
 
-  // তারিখের শর্টকাট
+  // Date Shortcuts
   const handleToday = () => setSelectedDate(todayStr);
   const handleYesterday = () => {
     const d = new Date();
@@ -35,7 +35,7 @@ export default function OrdersPage() {
     setSelectedDate(d.toISOString().split("T")[0]);
   };
 
-  // অর্ডার লোড করার ফাংশন
+  // Load Orders
   const loadOrders = async () => {
     setLoading(true);
     try {
@@ -55,7 +55,7 @@ export default function OrdersPage() {
       if (error) throw error;
       setOrders(data || []);
     } catch (err: any) {
-      console.error("অর্ডার লোড করতে সমস্যা হয়েছে:", err.message);
+      console.error("Error loading orders:", err.message);
     } finally {
       setLoading(false);
     }
@@ -65,7 +65,7 @@ export default function OrdersPage() {
     loadOrders();
   }, [selectedDate]);
 
-  // ড্যাশবোর্ড কার্ড মেট্রিক্স ক্যালকুলেশন
+  // Metrics Calculation
   const metrics = useMemo(() => {
     let deliveredTotal = 0;
     let refunds = 0;
@@ -95,15 +95,13 @@ export default function OrdersPage() {
     };
   }, [orders]);
 
-  // ফিল্টারিং লজিক (৪টি ডেলিভারি মোড সহ)
+  // 4 Delivery Modes + All Modes Filter Logic
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      // ১. অর্ডার স্ট্যাটাস চেক
       if (statusFilter !== "all" && order.order_status !== statusFilter) {
         return false;
       }
 
-      // ডেলিভারি ও পেমেন্টের ধরন
       const isHome = order.delivery_type === "home";
       const isSelf =
         order.delivery_type === "pickup" ||
@@ -120,17 +118,16 @@ export default function OrdersPage() {
         order.payment_status === "advance" ||
         order.payment_type === "advance";
 
-      // ২. ৪টি ডেলিভারি মোড শর্ত
       if (deliveryFilter === "home_full") return isHome && isFull;
       if (deliveryFilter === "home_advance") return isHome && isAdvance;
       if (deliveryFilter === "self_full") return isSelf && isFull;
       if (deliveryFilter === "self_advance") return isSelf && isAdvance;
 
-      return true; // "all" মোড
+      return true;
     });
   }, [orders, statusFilter, deliveryFilter]);
 
-  // স্ট্যাটাস পরিবর্তন হ্যান্ডলার
+  // Status Change Handler
   const handleStatusChange = async (orderId: string | number, nextStatus: string) => {
     setActionLoading(true);
     try {
@@ -142,15 +139,15 @@ export default function OrdersPage() {
       if (error) throw error;
       await loadOrders();
     } catch (err: any) {
-      alert("স্ট্যাটাস আপডেট ব্যর্থ হয়েছে: " + err.message);
+      alert("Failed to update status: " + err.message);
     } finally {
       setActionLoading(false);
     }
   };
 
-  // পেমেন্ট অ্যাপ্রুভ হ্যান্ডলার
+  // Payment Approve Handler
   const handleApprovePayment = async (order: any) => {
-    if (!confirm(`অর্ডার #${order.order_number || order.id} এর পেমেন্ট অ্যাপ্রুভ করতে চান?`)) return;
+    if (!confirm(`Approve payment for Order #${order.order_number || order.id}?`)) return;
 
     setActionLoading(true);
     try {
@@ -164,16 +161,16 @@ export default function OrdersPage() {
         .eq("id", order.id);
 
       if (error) throw error;
-      alert("পেমেন্ট সফলভাবে অ্যাপ্রুভ করা হয়েছে!");
+      alert("Payment approved successfully!");
       await loadOrders();
     } catch (err: any) {
-      alert("অ্যাপ্রুভ করতে সমস্যা হয়েছে: " + err.message);
+      alert("Approval failed: " + err.message);
     } finally {
       setActionLoading(false);
     }
   };
 
-  // প্রিন্ট স্লিপ হ্যান্ডলার
+  // Print Slip Handler
   const handlePrintSlip = (order: any) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
@@ -181,7 +178,7 @@ export default function OrdersPage() {
     printWindow.document.write(`
       <html>
         <head>
-          <title>Order Slip #${order.order_number || order.id}</title>
+          <title>Order Receipt #${order.order_number || order.id}</title>
           <style>
             body { font-family: monospace; padding: 20px; font-size: 14px; }
             .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; margin-bottom: 10px; }
@@ -192,13 +189,13 @@ export default function OrdersPage() {
         <body>
           <div class="header">
             <h2>QUICKPIN</h2>
-            <p>অর্ডার রসিদ: #${order.order_number || order.id}</p>
-            <p>তারিখ: ${new Date(order.created_at).toLocaleDateString()}</p>
+            <p>Receipt: #${order.order_number || order.id}</p>
+            <p>Date: ${new Date(order.created_at).toLocaleDateString()}</p>
           </div>
-          <div class="row"><span>গ্রাহক:</span><span>${order.profile?.name || "Customer"}</span></div>
-          <div class="row"><span>মোবাইল:</span><span>${order.profile?.phone || "N/A"}</span></div>
-          <div class="row"><span>ডেলিভারি মোড:</span><span>${order.delivery_type || "N/A"}</span></div>
-          <div class="row total"><span>মোট মূল্য:</span><span>₹${order.total_amount}</span></div>
+          <div class="row"><span>Customer:</span><span>${order.profile?.name || "Customer"}</span></div>
+          <div class="row"><span>Phone:</span><span>${order.profile?.phone || "N/A"}</span></div>
+          <div class="row"><span>Delivery Mode:</span><span>${order.delivery_type || "N/A"}</span></div>
+          <div class="row total"><span>Total Amount:</span><span>₹${order.total_amount}</span></div>
           <script>window.print(); window.close();</script>
         </body>
       </html>
@@ -208,11 +205,11 @@ export default function OrdersPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-4">
-      {/* তারিখ নির্বাচন ও মাস্টার পিকলিস্ট */}
+      {/* Date Picker & Master Picklist */}
       <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1.5 border border-blue-500 rounded-lg px-2.5 py-1.5 bg-white text-xs font-medium">
-            <span>📅 তারিখ:</span>
+            <span>📅 Date:</span>
             <input
               type="date"
               value={selectedDate}
@@ -223,7 +220,7 @@ export default function OrdersPage() {
 
           <button
             onClick={handleToday}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition ${
+            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition cursor-pointer ${
               selectedDate === todayStr
                 ? "bg-blue-600 text-white"
                 : "bg-blue-50 text-blue-700 hover:bg-blue-100"
@@ -234,7 +231,7 @@ export default function OrdersPage() {
 
           <button
             onClick={handleYesterday}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-100 text-slate-700 hover:bg-slate-200 transition cursor-pointer"
           >
             Yesterday
           </button>
@@ -248,30 +245,30 @@ export default function OrdersPage() {
         </button>
       </div>
 
-      {/* ৪টি সামারি মেট্রিক্স কার্ড */}
+      {/* 4 Summary Metrics Cards */}
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500">মোট অর্ডার</p>
+          <p className="text-[11px] font-semibold text-slate-500">Total Orders</p>
           <p className="text-xl font-bold text-slate-900 mt-1">{metrics.totalOrders}</p>
         </div>
 
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500">ডেলিভারি সম্পন্ন</p>
+          <p className="text-[11px] font-semibold text-slate-500">Delivered</p>
           <p className="text-xl font-bold text-blue-600 mt-1">₹{metrics.deliveredTotal.toFixed(2)}</p>
         </div>
 
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-rose-500">মোট রিফান্ড</p>
+          <p className="text-[11px] font-semibold text-rose-500">Total Refunds</p>
           <p className="text-xl font-bold text-rose-600 mt-1">- ₹{metrics.refunds.toFixed(2)}</p>
         </div>
 
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-emerald-600">আসল ক্যাশ সেলস</p>
+          <p className="text-[11px] font-semibold text-emerald-600">Net Cash Sales</p>
           <p className="text-xl font-bold text-emerald-700 mt-1">₹{metrics.cashSales.toFixed(2)}</p>
         </div>
       </div>
 
-      {/* অর্ডার স্ট্যাটাস ফিল্টার বার */}
+      {/* Order Status Filters */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs font-medium">
         {[
           { id: "all", label: "All Orders" },
@@ -293,10 +290,10 @@ export default function OrdersPage() {
         ))}
       </div>
 
-      {/* ৪টি ডেলিভারি মোড + সব মোড ফিল্টার বার */}
+      {/* 4 Delivery Modes Filter */}
       <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none text-xs font-medium">
         {[
-          { id: "all", label: "সব মোড" },
+          { id: "all", label: "All Modes" },
           { id: "home_full", label: "🏠 Home Full" },
           { id: "home_advance", label: "🏠 Home Advance" },
           { id: "self_full", label: "🏪 Self Full" },
@@ -316,15 +313,15 @@ export default function OrdersPage() {
         ))}
       </div>
 
-      {/* অর্ডার তালিকা / এম্পটি স্টেট */}
+      {/* Order List / Empty State */}
       <div className="space-y-3">
         {loading ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-xs text-slate-400">
-            অর্ডার লোড হচ্ছে...
+            Loading orders...
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-xs text-slate-400 font-medium">
-            এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি।
+            No orders found in this filter.
           </div>
         ) : (
           filteredOrders.map((order) => (
@@ -346,7 +343,7 @@ export default function OrdersPage() {
         )}
       </div>
 
-      {/* সমস্ত মডাল (Picklist, Reject, Zoom) */}
+      {/* Modals */}
       <OrderModals
         orders={orders}
         selectedDate={selectedDate}
@@ -363,4 +360,3 @@ export default function OrdersPage() {
     </div>
   );
 }
-
