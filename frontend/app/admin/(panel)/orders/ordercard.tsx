@@ -1,37 +1,45 @@
 "use client";
 
-// স্বতন্ত্র Order ইন্টারফেস (যাতে ./page এর উপর ডিপেন্ডেন্ট না থাকতে হয়)
-export interface Order {
-  id: string | number;
-  order_number?: string | number;
-  created_at?: string;
-  total_amount: number;
-  order_status: string;
-  payment_type?: string;
-  payment_status?: string;
-  delivery_type?: string;
-  is_refund_paid?: boolean;
-  refund_amount?: number;
-  payment_screenshot_url?: string | null;
-  upi_transaction_id?: string | null;
-  profile?: {
-    name?: string;
-    phone?: string;
-  } | null;
-}
+// ১. page.tsx থেকে সরাসরি আসল Order টাইপ ইমপোর্ট করুন (import type হিসেবে)
+import type { Order } from "./page";
 
+// ২. হ্যান্ডলারগুলোতে 'void | Promise<void>' দিন এবং অপশনাল (?) রাখুন
 type OrderCardProps = {
   order: Order;
   isExpanded: boolean;
   onToggleExpand: () => void;
   actionLoading?: boolean;
   imageLoading?: boolean;
-  onStatusChange?: (orderId: string, nextStatus: string) => void;
-  onApprovePayment?: (order: Order) => void;
-  onRejectClick?: (order: Order) => void;
+  onStatusChange?: (orderId: string, nextStatus: string) => void | Promise<void>;
+  onApprovePayment?: (order: Order) => void | Promise<void>;
+  onRejectClick?: (order: Order) => void | Promise<void>;
   onViewScreenshot?: (url: string | null) => void;
-  onRefundClick?: (order: Order) => void;
+  onRefundClick?: (order: Order) => void | Promise<void>;
   onPrintSlip?: (order: Order) => void;
+};
+
+export default function OrderCard({
+  order,
+  isExpanded,
+  onToggleExpand,
+  actionLoading = false,
+  imageLoading = false,
+  onStatusChange,
+  onApprovePayment,
+  onRejectClick,
+  onViewScreenshot,
+  onRefundClick,
+  onPrintSlip,
+}: OrderCardProps) {
+  const customerName = (order as any).profile?.name || "Customer";
+  const customerPhone = (order as any).profile?.phone || "";
+  const isPickup =
+    (order as any).delivery_type === "pickup" ||
+    (order as any).delivery_type === "self_pickup" ||
+    (order as any).delivery_type === "self";
+  const proofUrl = (order as any).payment_screenshot_url;
+  const utrNumber = (order as any).upi_transaction_id;
+  
 };
 
 export default function OrderCard({
