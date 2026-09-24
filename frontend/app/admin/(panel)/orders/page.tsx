@@ -1,117 +1,72 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import OrderCard from "./OrderCard";
+import OrderCard, { Order } from "./OrderCard";
 import OrderModals from "./OrderModals";
 import RefundModal from "./RefundModal";
-
-export type OrderItem = {
-  id: string;
-  product_name?: string;
-  name?: string;
-  quantity: number;
-  unit_price?: number;
-  price?: number;
-  unit?: string;
-  weight?: number;
-};
-
-export type Order = {
-  id: string;
-  order_number: string;
-  total_amount: number;
-  paid_amount: number;
-  remaining_amount: number;
-  payment_method: string | null;
-  payment_status: string;
-  payment_type: "full" | "partial";
-  partial_payment_amount: number;
-  upi_transaction_id?: string | null;
-  payment_screenshot_url?: string | null;
-  screenshot_status?: string;
-  screenshot_attempts?: number;
-  rejection_reason?: string | null;
-  order_status: string;
-  delivery_type?: string;
-  delivery_address?: string | null;
-  refund_amount?: number;
-  created_at: string;
-  user_id: string | null;
-  profile?: {
-    name?: string;
-    phone?: string;
-    email?: string;
-    address?: string;
-  } | null;
-  items?: OrderItem[];
-};
 
 export default function AdminOrdersPage() {
   const supabase = createClient();
 
+  // লোকাল তারিখ ফরম্যাট (YYYY-MM-DD)
+  const getLocalDateString = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString());
   const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [selectedDate, setSelectedDate] = useState<string>(
-    () => new Date().toISOString().split("T")[0]
-  );
+  const [loading, setLoading] = useState<boolean>(true);
+  const [actionLoading, setActionLoading] = useState<boolean>(false);
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
 
-  // ফিল্টার স্টেটসমূহ
+  // ফিল্টার স্ট্যাটাস ও মোড
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [deliveryFilter, setDeliveryFilter] = useState<string>("all");
+  const [modeFilter, setModeFilter] = useState<string>("all");
 
-  // UI ও মোডাল স্টেট
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
-  const [showPicklistModal, setShowPicklistModal] = useState(false);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
-  const [imageLoading, setImageLoading] = useState(false);
+  // মোডাল হ্যান্ডলিং স্টেট
+  const [showPicklist, setShowPicklist] = useState<boolean>(false);
   const [rejectingOrder, setRejectingOrder] = useState<Order | null>(null);
-  const [refundOrder, setRefundOrder] = useState<Order | null>(null);
-  const [savingRefund, setSavingRefund] = useState(false);
+  const [refundingOrder, setRefundingOrder] = useState<Order | null>(null);
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  // ডাটাবেজ থেকে অর্ডার লোড
+  // ডেটাবেজ থেকে অর্ডার আনা
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase
+      const startOfDay = `${selectedDate}T00:00:00.000Z`;
+      const endOfDay = `${selectedDate}T23:59:59.999Z`;
+
+      const { data, error } = await supabase
         .from("orders")
-        .select("*, order_items(*)")
+        .select(`
+          *,
+          profile:profiles(name, phone, email, address),
+          items:order_items(
+            id,
+            product_name,
+            name,
+            quantity,
+            unit_price,
+            price,
+            unit,
+            weight
+          )
+        `)
+        .gte("created_at", startOfDay)
+        .lte("created_at", endOfDay)
         .order("created_at", { ascending: false });
 
-      if (selectedDate) {
-        query = query
-          .gte("created_at", `${selectedDate}T00:00:00.000Z`)
-          .lte("created_at", `${selectedDate}T23:59:59.999Z`);
+      if (error) {
+        console.error("অর্ডার ফেচিং এরর:", error);
+      } else {
+        setOrders((data as Order[]) || []);
       }
-
-      const { data: orderData, error: orderError } = await query;
-      if (orderError) throw orderError;
-
-      const rawList = (orderData as any[]) || [];
-      const userIds = [...new Set(rawList.map((o) => o.user_id).filter(Boolean))];
-
-      let profileMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: pData } = await supabase
-          .from("profiles")
-          .select("id, name, phone, email, address")
-          .in("id", userIds);
-
-        (pData || []).forEach((p: any) => {
-          profileMap[p.id] = p;
-        });
-      }
-
-      const formatted: Order[] = rawList.map((o) => ({
-        ...o,
-        profile: profileMap[o.user_id] || null,
-        items: o.order_items || o.items || [],
-      }));
-
-      setOrders(formatted);
-    } catch (err: any) {
-      console.error("Orders fetch error:", err.message);
+    } catch (err) {
+      console.error("নেটওয়ার্ক সমস্যা:", err);
     } finally {
       setLoading(false);
     }
@@ -134,332 +89,328 @@ export default function AdminOrdersPage() {
 
     setActionLoading(false);
     if (error) {
-      alert("Status update failed: " + error.message);
-      return;
+      alert("স্ট্যাটাস আপডেট করা সম্ভব হয়নি: " + error.message);
+    } else {
+      fetchOrders();
     }
-    fetchOrders();
   };
 
   // পেমেন্ট অনুমোদন
   const handleApprovePayment = async (order: Order) => {
-    if (!confirm(`অর্ডার #${order.order_number}-এর পেমেন্ট কনফার্ম করতে চান?`)) return;
     setActionLoading(true);
-
-    const total = Number(order.total_amount || 0);
-    const partial = Number(order.partial_payment_amount || 0);
-    const paidAmount = order.payment_type === "partial" ? partial : total;
-
     const { error } = await supabase
       .from("orders")
       .update({
-        payment_status: "success",
-        payment_verified_by: "admin",
-        payment_verified_at: new Date().toISOString(),
+        payment_status: "paid",
+        paid_amount: order.total_amount,
+        remaining_amount: 0,
         screenshot_status: "approved",
         order_status: "current",
         status_changed_at: new Date().toISOString(),
-        rejection_reason: null,
-        paid_amount: paidAmount,
-        remaining_amount: Math.max(0, total - paidAmount),
       })
       .eq("id", order.id);
 
     setActionLoading(false);
     if (error) {
-      alert("পেমেন্ট কনফার্ম করা যায়নি: " + error.message);
-      return;
-    }
-    fetchOrders();
-  };
-
-  // স্ক্রিনশট প্রিভিউ
-  const handleViewScreenshot = async (url?: string | null) => {
-    if (!url) return;
-    if (url.startsWith("http")) {
-      setZoomedImage(url);
-      return;
-    }
-    setImageLoading(true);
-    try {
-      const path = url.replace(/^payment-screenshots\//, "").replace(/^\/+/, "");
-      const { data, error } = await supabase.storage
-        .from("payment-screenshots")
-        .createSignedUrl(path, 3600);
-      if (error || !data) throw error;
-      setZoomedImage(data.signedUrl);
-    } catch (err: any) {
-      alert("স্ক্রিনশট লোড করা যায়নি: " + (err?.message || "File not found"));
-    } finally {
-      setImageLoading(false);
-    }
-  };
-
-  // রিফান্ড সেভ
-  const submitRefund = async (refundData: any) => {
-    setSavingRefund(true);
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: "refund",
-          refund_amount: refundData.amount,
-          refund_reason: refundData.reason,
-          status_changed_at: new Date().toISOString(),
-        })
-        .eq("id", refundOrder?.id);
-
-      if (error) throw error;
-      setRefundOrder(null);
+      alert("পেমেন্ট অ্যাপ্রুভ করা যায়নি: " + error.message);
+    } else {
       fetchOrders();
-    } catch (err: any) {
-      alert("রিফান্ড সেভ হয়নি: " + err.message);
-    } finally {
-      setSavingRefund(false);
     }
   };
 
-  // ক্যাশ মেমো / স্লিপ প্রিন্ট
+  // ক্যাশ মেমো প্রিন্ট
   const handlePrintSlip = (order: Order) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-    printWindow.document.write(`
+    const printWin = window.open("", "_blank");
+    if (!printWin) return;
+    const isPickup = order.delivery_type === "pickup" || order.delivery_type === "self_pickup";
+
+    printWin.document.write(`
       <html>
         <head>
-          <title>Order #${order.order_number}</title>
+          <title>Cash Memo #${order.order_number}</title>
           <style>
-            body { font-family: sans-serif; padding: 16px; font-size: 13px; color: #111; }
-            .header { text-align: center; border-bottom: 1px dashed #999; padding-bottom: 8px; margin-bottom: 8px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 4px; }
-            .items { border-top: 1px dashed #999; border-bottom: 1px dashed #999; padding: 8px 0; margin: 8px 0; }
-            .bold { font-weight: bold; }
+            body { font-family: monospace; padding: 20px; font-size: 13px; color: #000; }
+            .header { text-align: center; margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+            .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
+            .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            .table th, .table td { border-bottom: 1px dashed #ccc; padding: 6px 0; text-align: left; }
+            .table th:last-child, .table td:last-child { text-align: right; }
+            .summary { margin-top: 15px; border-top: 1px dashed #000; padding-top: 8px; }
           </style>
         </head>
         <body>
           <div class="header">
-            <h2 style="margin: 0;">Quickpin Order Slip</h2>
-            <p style="margin: 4px 0;">Order #${order.order_number}</p>
+            <h2 style="margin:0;">Quickpin Grocery</h2>
+            <p style="margin:4px 0 0 0;">Order #${order.order_number}</p>
+            <p style="margin:2px 0 0 0;">${new Date(order.created_at).toLocaleString()}</p>
           </div>
-          <div class="row"><span>গ্রাহক:</span><span class="bold">${order.profile?.name || "Customer"}</span></div>
-          <div class="row"><span>ফোন:</span><span>${order.profile?.phone || "-"}</span></div>
-          <div class="row"><span>ঠিকানা:</span><span>${order.delivery_address || order.profile?.address || "Store Pickup"}</span></div>
-          <div class="row"><span>ডেলিভারি মোড:</span><span class="bold">${order.delivery_type === "pickup" ? "Self Pickup" : "Home Delivery"}</span></div>
-          <div class="items">
-            ${(order.items || []).map((i) => `
-              <div class="row">
-                <span>${i.product_name || i.name} (${i.quantity}${i.unit || "unit"})</span>
-                <span>₹${Number((i.unit_price || i.price || 0) * i.quantity).toFixed(2)}</span>
-              </div>
-            `).join("")}
+          <div>
+            <p><strong>Customer:</strong> ${order.profile?.name || "Customer"}</p>
+            <p><strong>Phone:</strong> ${order.profile?.phone || "N/A"}</p>
+            <p><strong>Mode:</strong> ${isPickup ? "Self Pickup" : "Home Delivery"}</p>
+            ${order.delivery_address ? `<p><strong>Address:</strong> ${order.delivery_address}</p>` : ""}
           </div>
-          <div class="row bold"><span>মোট টাকা:</span><span>₹${Number(order.total_amount).toFixed(2)}</span></div>
-          <div class="row"><span>পরিশোধিত:</span><span>₹${Number(order.paid_amount || 0).toFixed(2)}</span></div>
-          <div class="row bold" style="color: #c00;"><span>বাকি টাকা:</span><span>₹${Number(order.remaining_amount || 0).toFixed(2)}</span></div>
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Item</th>
+                <th>Qty</th>
+                <th>Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(order.items || [])
+                .map(
+                  (item) => `
+                <tr>
+                  <td>${item.product_name || item.name}</td>
+                  <td>${item.quantity}${item.unit || ""}</td>
+                  <td>₹${Number((item.unit_price || item.price || 0) * item.quantity).toFixed(2)}</td>
+                </tr>
+              `
+                )
+                .join("")}
+            </tbody>
+          </table>
+          <div class="summary">
+            <div class="row"><span>Total Amount:</span><span>₹${Number(order.total_amount).toFixed(2)}</span></div>
+            <div class="row"><span>Paid Amount:</span><span>₹${Number(order.paid_amount || 0).toFixed(2)}</span></div>
+            <div class="row" style="font-weight:bold; font-size:14px; margin-top:4px;">
+              <span>Balance Due:</span><span>₹${Number(order.remaining_amount || 0).toFixed(2)}</span>
+            </div>
+          </div>
           <script>window.onload = () => { window.print(); window.close(); };</script>
         </body>
       </html>
     `);
-    printWindow.document.close();
+    printWin.document.close();
   };
 
-  // আসল ক্যাশ ও সেলস হিসাব (KPIs)
-  const kpis = useMemo(() => {
-    const totalCount = orders.length;
-    const deliveredOrders = orders.filter((o) => o.order_status === "delivered");
-    const deliveredSales = deliveredOrders.reduce((acc, o) => acc + Number(o.paid_amount || o.total_amount || 0), 0);
-    const totalRefund = orders
-      .filter((o) => o.order_status === "refund" || Number(o.refund_amount || 0) > 0)
-      .reduce((acc, o) => acc + Number(o.refund_amount || 0), 0);
-    const netSales = Math.max(0, deliveredSales - totalRefund);
-
-    return { totalCount, deliveredSales, totalRefund, netSales };
+  // স্ট্যাটাস অনুযায়ী অর্ডারের সংখ্যা গণনা
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {
+      all: orders.length,
+      current: 0,
+      out_for_delivery: 0,
+      delivered: 0,
+      pending: 0,
+      refund: 0,
+      spam: 0,
+    };
+    orders.forEach((o) => {
+      if (map[o.order_status] !== undefined) {
+        map[o.order_status] += 1;
+      }
+    });
+    return map;
   }, [orders]);
 
-  // ফিল্টার করা তালিকা (সবকটি স্ট্যাটাস ও আসল ৪টি মোড)
+  // ফিল্টারিং লজিক (৪টি মোড ও ৭টি স্ট্যাটাস)
   const filteredOrders = useMemo(() => {
-    return orders.filter((o) => {
+    return orders.filter((order) => {
       // ১. স্ট্যাটাস ফিল্টার
-      let matchStatus = true;
-      if (statusFilter === "current") matchStatus = o.order_status === "current";
-      else if (statusFilter === "out_for_delivery") matchStatus = o.order_status === "out_for_delivery";
-      else if (statusFilter === "delivered") matchStatus = o.order_status === "delivered";
-      else if (statusFilter === "pending") matchStatus = o.payment_status === "pending" || o.order_status === "pending";
-      else if (statusFilter === "refund") matchStatus = o.order_status === "refund" || Number(o.refund_amount || 0) > 0;
-      else if (statusFilter === "spam") matchStatus = o.order_status === "spam";
-
-      // ২. ডেলিভারি ও পেমেন্ট মোড ফিল্টার
-      const isHome = !o.delivery_type || o.delivery_type === "home" || o.delivery_type === "home_delivery";
-      const isPickup = o.delivery_type === "pickup" || o.delivery_type === "self_pickup";
-      const isFull = o.payment_type === "full" || (!o.payment_type && Number(o.remaining_amount || 0) <= 0);
-      const isAdvance = o.payment_type === "partial" || Number(o.remaining_amount || 0) > 0;
-
-      let matchDelivery = true;
-      if (deliveryFilter === "home_full") {
-        matchDelivery = isHome && isFull;
-      } else if (deliveryFilter === "home_advance") {
-        matchDelivery = isHome && isAdvance;
-      } else if (deliveryFilter === "self_full") {
-        matchDelivery = isPickup && isFull;
-      } else if (deliveryFilter === "self_advance") {
-        matchDelivery = isPickup && isAdvance;
+      if (statusFilter !== "all" && order.order_status !== statusFilter) {
+        return false;
       }
 
-      return matchStatus && matchDelivery;
+      // ২. মোড ফিল্টার
+      const isPickup = order.delivery_type === "pickup" || order.delivery_type === "self_pickup";
+      const isAdvance = order.payment_type === "partial" || Number(order.remaining_amount || 0) > 0;
+
+      if (modeFilter === "home_full" && (isPickup || isAdvance)) return false;
+      if (modeFilter === "home_advance" && (isPickup || !isAdvance)) return false;
+      if (modeFilter === "self_full" && (!isPickup || isAdvance)) return false;
+      if (modeFilter === "self_advance" && (!isPickup || !isAdvance)) return false;
+
+      return true;
     });
-  }, [orders, statusFilter, deliveryFilter]);
+  }, [orders, statusFilter, modeFilter]);
 
   return (
-    <div className="space-y-4 max-w-5xl mx-auto pb-12">
-      {/* তারিখ বার ও পিকলিস্ট */}
-      <div className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs space-y-2.5">
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-1.5 flex-1 min-w-0">
-            <span className="text-xs font-bold text-slate-700 whitespace-nowrap">📅 Date:</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-2 py-1 text-xs font-semibold border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50 flex-1 min-w-0 max-w-[140px]"
-            />
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <button
-              onClick={() => setSelectedDate(new Date().toISOString().split("T")[0])}
-              className="px-2.5 py-1 text-xs font-semibold bg-blue-50 text-blue-700 rounded-lg border border-blue-200 hover:bg-blue-100"
-            >
-              Today
-            </button>
-            <button
-              onClick={() => {
-                const d = new Date();
-                d.setDate(d.getDate() - 1);
-                setSelectedDate(d.toISOString().split("T")[0]);
-              }}
-              className="px-2.5 py-1 text-xs font-semibold bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200"
-            >
-              Yesterday
-            </button>
-          </div>
+    <div className="space-y-3">
+      {/* ১. কম্প্যাক্ট ডেট বার ও মাস্টার পিকলিস্ট */}
+      <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="text-xs font-bold px-2 py-1.5 border border-slate-300 rounded-xl bg-slate-50 outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => setSelectedDate(getLocalDateString())}
+            className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border transition ${
+              selectedDate === getLocalDateString()
+                ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => {
+              const y = new Date();
+              y.setDate(y.getDate() - 1);
+              setSelectedDate(getLocalDateString(y));
+            }}
+            className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border transition ${
+              (() => {
+                const y = new Date();
+                y.setDate(y.getDate() - 1);
+                return selectedDate === getLocalDateString(y);
+              })()
+                ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            Yesterday
+          </button>
         </div>
 
         <button
-          onClick={() => setShowPicklistModal(true)}
-          className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition"
+          onClick={() => setShowPicklist(true)}
+          className="text-xs font-black px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-2xs transition flex items-center gap-1 shrink-0"
         >
-          📋 Master Picklist
+          📋 Master Picklist ({counts.current || 0})
         </button>
       </div>
 
-      {/* ৪টি কার্ড (KPIs) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5">
-        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-bold text-slate-500">Total Orders</p>
-          <p className="text-lg font-black text-slate-900 mt-0.5">{kpis.totalCount}</p>
-        </div>
-        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-bold text-blue-600">Delivered</p>
-          <p className="text-lg font-black text-blue-600 mt-0.5">₹{kpis.deliveredSales.toFixed(2)}</p>
-        </div>
-        <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-bold text-rose-600">Total Refunds</p>
-          <p className="text-lg font-black text-rose-600 mt-0.5">- ₹{kpis.totalRefund.toFixed(2)}</p>
-        </div>
-        <div className="bg-white p-3 rounded-2xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
-          <p className="text-[11px] font-bold text-emerald-800">Net Cash Sales</p>
-          <p className="text-lg font-black text-emerald-700 mt-0.5">₹{kpis.netSales.toFixed(2)}</p>
+      {/* ২. ৪টি ডেলিভারি মোড বাটন (কোনো বাটন যাতে না কাটে তার জন্য হরিজন্টাল স্ক্রল) */}
+      <div className="overflow-x-auto scrollbar-none py-0.5">
+        <div className="flex items-center gap-1.5 min-w-max">
+          <button
+            onClick={() => setModeFilter("all")}
+            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
+              modeFilter === "all"
+                ? "bg-slate-900 text-white border-slate-900"
+                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            All Modes
+          </button>
+          <button
+            onClick={() => setModeFilter("home_full")}
+            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
+              modeFilter === "home_full"
+                ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+            }`}
+          >
+            🏠 Home Full
+          </button>
+          <button
+            onClick={() => setModeFilter("home_advance")}
+            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
+              modeFilter === "home_advance"
+                ? "bg-amber-700 text-white border-amber-700 shadow-xs"
+                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+            }`}
+          >
+            🏠 Home Advance
+          </button>
+          <button
+            onClick={() => setModeFilter("self_full")}
+            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
+              modeFilter === "self_full"
+                ? "bg-blue-700 text-white border-blue-700 shadow-xs"
+                : "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
+            }`}
+          >
+            🏪 Self Full
+          </button>
+          <button
+            onClick={() => setModeFilter("self_advance")}
+            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
+              modeFilter === "self_advance"
+                ? "bg-orange-700 text-white border-orange-700 shadow-xs"
+                : "bg-orange-50 text-orange-900 border-orange-200 hover:bg-orange-100"
+            }`}
+          >
+            🏪 Self Advance
+          </button>
         </div>
       </div>
 
-      {/* ফিল্টার সেকশন (কাটা বন্ধ করতে min-w-max ও মসৃণ টাচ স্ক্রল) */}
-      <div className="space-y-2">
-        {/* ১. স্ট্যাটাস ফিল্টার বাটন */}
-        <div className="w-full overflow-x-auto no-scrollbar py-0.5">
-          <div className="flex items-center gap-1.5 min-w-max px-1">
-            {[
-              { id: "all", label: "All Orders" },
-              { id: "current", label: "Current Order" },
-              { id: "out_for_delivery", label: "Out for Delivery" },
-              { id: "delivered", label: "Delivered" },
-              { id: "pending", label: "Pending Order" },
-              { id: "refund", label: "Refund" },
-              { id: "spam", label: "Spam" },
-            ].map((tab) => (
+      {/* ৩. ৭টি অর্ডার স্ট্যাটাস ফিল্টার বাটন */}
+      <div className="overflow-x-auto scrollbar-none py-0.5">
+        <div className="flex items-center gap-1.5 min-w-max">
+          {[
+            { id: "all", label: "All Orders", count: counts.all },
+            { id: "current", label: "Current Order", count: counts.current },
+            { id: "out_for_delivery", label: "Out for Delivery", count: counts.out_for_delivery },
+            { id: "delivered", label: "Delivered", count: counts.delivered },
+            { id: "pending", label: "Pending Order", count: counts.pending },
+            { id: "refund", label: "Refund", count: counts.refund },
+            { id: "spam", label: "Spam", count: counts.spam },
+          ].map((tab) => {
+            const isActive = statusFilter === tab.id;
+            return (
               <button
                 key={tab.id}
                 onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition shrink-0 ${
-                  statusFilter === tab.id
-                    ? "bg-slate-900 text-white shadow-xs"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border shrink-0 transition flex items-center gap-1.5 ${
+                  isActive
+                    ? "bg-slate-900 text-white border-slate-900 shadow-xs"
+                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
                 }`}
               >
-                {tab.label}
+                <span>{tab.label}</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                    isActive
+                      ? "bg-white text-slate-900"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {tab.count}
+                </span>
               </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ২. ডেলিভারি ও পেমেন্ট মোড বাটন (আসল ৪টি মোড) */}
-        <div className="w-full overflow-x-auto no-scrollbar py-0.5">
-          <div className="flex items-center gap-1.5 min-w-max px-1">
-            {[
-              { id: "all", label: "All Modes" },
-              { id: "home_full", label: "🏠 Home Full" },
-              { id: "home_advance", label: "🏠 Home Advance" },
-              { id: "self_full", label: "🏪 Self Full" },
-              { id: "self_advance", label: "🏪 Self Advance" },
-            ].map((d) => (
-              <button
-                key={d.id}
-                onClick={() => setDeliveryFilter(d.id)}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition shrink-0 ${
-                  deliveryFilter === d.id
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* অর্ডার তালিকা */}
+      {/* ৪. অর্ডার কার্ড তালিকা */}
       {loading ? (
-        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-slate-200 text-xs">
-          Loading orders...
+        <div className="text-center py-12 text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">
+          অর্ডার লোড হচ্ছে...
         </div>
       ) : filteredOrders.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 text-center text-slate-400 border border-slate-200 text-xs">
-          No orders found in this filter.
+        <div className="text-center py-12 text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">
+          এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filteredOrders.map((order) => (
             <OrderCard
               key={order.id}
               order={order}
-              isExpanded={expandedOrderId === order.id}
-              onToggleExpand={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}
+              isExpanded={!!expandedOrders[order.id]}
+              onToggleExpand={() =>
+                setExpandedOrders((prev) => ({
+                  ...prev,
+                  [order.id]: !prev[order.id],
+                }))
+              }
               actionLoading={actionLoading}
-              imageLoading={imageLoading}
+              imageLoading={false}
               onStatusChange={handleStatusChange}
               onApprovePayment={handleApprovePayment}
               onRejectClick={(ord) => setRejectingOrder(ord)}
-              onViewScreenshot={handleViewScreenshot}
-              onRefundClick={(ord) => setRefundOrder(ord)}
+              onViewScreenshot={(url) => setZoomedImage(url || null)}
+              onRefundClick={(ord) => setRefundingOrder(ord)}
               onPrintSlip={handlePrintSlip}
             />
           ))}
         </div>
       )}
 
-      {/* মোডালসমূহ */}
+      {/* ৫. মোডালসমূহ */}
       <OrderModals
         orders={orders}
         selectedDate={selectedDate}
-        showPicklist={showPicklistModal}
-        onClosePicklist={() => setShowPicklistModal(false)}
+        showPicklist={showPicklist}
+        onClosePicklist={() => setShowPicklist(false)}
         rejectingOrder={rejectingOrder}
         onCloseReject={() => setRejectingOrder(null)}
         actionLoading={actionLoading}
@@ -469,16 +420,14 @@ export default function AdminOrdersPage() {
         onSuccess={fetchOrders}
       />
 
-      {/* রিফান্ড মোডাল */}
-      {refundOrder && (
+      {refundingOrder && (
         <RefundModal
-          order={refundOrder}
-          onClose={() => setRefundOrder(null)}
-          onSubmit={submitRefund}
-          saving={savingRefund}
+          order={refundingOrder}
+          onClose={() => setRefundingOrder(null)}
+          onSuccess={fetchOrders}
         />
       )}
     </div>
   );
-                                  }
-              
+                         }
+
