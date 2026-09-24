@@ -1,11 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, Suspense } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import OrderDetailModal from "./OrderDetailModal";
 import RefundModal from "./RefundModal";
-import OrdersTable from "./OrdersTable";
 import { generateLabelPDF } from "@/lib/label-generator";
 
 type Order = any;
@@ -59,6 +57,7 @@ function getYesterdayDateString(): string {
 function resolveItemName(item: any): string {
   const p = item?.products || item?.product || {};
   return (
+    p.name_bn ||
     p.name_en ||
     item.name_en ||
     p.name ||
@@ -66,8 +65,7 @@ function resolveItemName(item: any): string {
     item.product_name ||
     p.title ||
     item.title ||
-    p.name_bn ||
-    "Product Item"
+    "পণ্য আইটেম"
   );
 }
 
@@ -97,7 +95,7 @@ function formatOrdersForPrint(orderList: Order[]): Order[] {
   });
 }
 
-export default function AdminOrdersPage() {
+function OrdersContent() {
   const supabase = createClient();
   const router = useRouter();
   const pathname = usePathname();
@@ -114,13 +112,18 @@ export default function AdminOrdersPage() {
   const [activeTab, setActiveTab] = useState(initialStatus);
   const [activeOrderType, setActiveOrderType] = useState("all");
   const [selected, setSelected] = useState<string[]>([]);
-  const [bulkStatus, setBulkStatus] = useState("");
-  const [viewingOrder, setViewingOrder] = useState<Order | null>(null);
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [savingRefund, setSavingRefund] = useState(false);
   const [generatingLabel, setGeneratingLabel] = useState(false);
   const [showSummaryModal, setShowSummaryModal] = useState(false);
   const [printedOrderIds, setPrintedOrderIds] = useState<string[]>([]);
+
+  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
+  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+
+  const toggleExpand = (id: string) => {
+    setExpandedOrders((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);
@@ -295,19 +298,9 @@ export default function AdminOrdersPage() {
 
     if (newStatus === "spam") {
       if (order.order_status === "current" || order.order_status === "out_for_delivery") {
-        alert("Action Blocked: 'Current Order' and 'Out for Delivery' orders cannot be moved to Spam.");
+        alert("Action Blocked: কারেন্ট বা ডেলিভারিতে থাকা অর্ডার স্প্যাম করা যাবে না।");
         return false;
       }
-    }
-
-    if (order.order_status === "pending" && !["current", "spam"].includes(newStatus)) {
-      alert("Action Blocked: Pending orders can only be moved to 'Current Order' or 'Spam'.");
-      return false;
-    }
-
-    if (newStatus === "refund" && order.order_status !== "delivered") {
-      alert("Action Blocked: Refunds can only be initiated on 'Delivered' orders.");
-      return false;
     }
 
     const updates: any = {
@@ -342,7 +335,7 @@ export default function AdminOrdersPage() {
       .eq("id", orderId);
 
     if (error) {
-      alert(error.message);
+      alert("Error: " + error.message);
       return false;
     }
     return true;
@@ -351,7 +344,7 @@ export default function AdminOrdersPage() {
   const handleSingleStatus = async (order: Order, newStatus: string) => {
     if (newStatus === "refund") {
       if (order.order_status !== "delivered") {
-        alert("Refund option is only available for 'Delivered' orders.");
+        alert("শুধু ডেলিভারি সম্পন্ন অর্ডারে রিফান্ড দেওয়া যাবে।");
         return;
       }
       setRefundOrder(order);
@@ -362,42 +355,7 @@ export default function AdminOrdersPage() {
     if (ok) fetchOrders();
   };
 
-  const handleMarkRefundDone = async (order: Order) => {
-    const inputRef = prompt(
-      `Mark Refund of ₹${order.refund_amount || order.total_amount} as Paid/Done?\n\nEnter Bank Ref / UTR (Optional, or press OK if Cash):`
-    );
-    if (inputRef === null) return;
-
-    const updates: any = {
-      refund_status: "success",
-      status_changed_at: new Date().toISOString(),
-    };
-
-    if (inputRef.trim()) {
-      updates.transaction_ref = inputRef.trim();
-    }
-
-    const { error } = await supabase
-      .from("orders")
-      .update(updates)
-      .eq("id", order.id);
-
-    if (error) {
-      alert("Update failed: " + error.message);
-      return;
-    }
-
-    fetchOrders();
-  };
-        const submitRefund = async (data: {
-    reason: string;
-    amount: number;
-    method: string;
-    note: string;
-    product_name?: string;
-    transaction_ref?: string;
-    customer_upi?: string;
-  }) => {
+  const submitRefund = async (data: any) => {
     if (!refundOrder) return;
     setSavingRefund(true);
 
@@ -413,19 +371,8 @@ export default function AdminOrdersPage() {
         refunded_at: new Date().toISOString(),
       });
     } catch (e) {
-      console.warn("Audit log note:", e);
+      console.warn("Refund log notice:", e);
     }
-
-    if (refundOrder.user_id && data.customer_upi) {
-      try {
-        await supabase
-          .from("profiles")
-          .update({ upi_id: data.customer_upi })
-          .eq("id", refundOrder.user_id);
-      } catch {}
-    }
-
-    const isImmediateSuccess = Boolean(data.transaction_ref);
 
     const ok = await changeStatus(refundOrder.id, "refund", {
       refund_reason: data.reason,
@@ -434,7 +381,7 @@ export default function AdminOrdersPage() {
       refund_note: data.note || null,
       transaction_ref: data.transaction_ref || null,
       customer_upi: data.customer_upi || refundOrder.customer_upi || null,
-      refund_status: isImmediateSuccess ? "success" : "pending",
+      refund_status: data.transaction_ref ? "success" : "pending",
       refunded_at: new Date().toISOString(),
     });
 
@@ -445,68 +392,7 @@ export default function AdminOrdersPage() {
     }
   };
 
-  const handleBulkStatus = async () => {
-    if (!bulkStatus) return alert("Select a target status first.");
-    if (selected.length === 0) return alert("Select at least one order.");
-    if (bulkStatus === "refund") {
-      return alert("Refunds cannot be applied in bulk. Process them individually on Delivered orders.");
-    }
-
-    if (bulkStatus === "spam") {
-      const invalidOperationalOrders = orders.filter(
-        (o) => selected.includes(o.id) && ["current", "out_for_delivery"].includes(o.order_status)
-      );
-      if (invalidOperationalOrders.length > 0) {
-        return alert(
-          `Security Alert: ${invalidOperationalOrders.length} order(s) are currently in Packing/Delivery. They cannot be marked as Spam.`
-        );
-      }
-    }
-
-    if (!confirm(`Change ${selected.length} orders to "${bulkStatus}"?`)) return;
-
-    for (const id of selected) await changeStatus(id, bulkStatus);
-    setBulkStatus("");
-    fetchOrders();
-  };
-
-  const handleDelete = async (order: Order) => {
-    if (order.order_status !== "spam") {
-      return alert("Only spam orders can be deleted.");
-    }
-    if (
-      !confirm(
-        `Delete spam order #${order.order_number}?\n\nCustomer profile history and addresses will remain safely kept.`
-      )
-    )
-      return;
-
-    const { error } = await supabase.from("orders").delete().eq("id", order.id);
-    if (error) return alert(error.message);
-    fetchOrders();
-  };
-
-  const handleBulkDelete = async () => {
-    const spamSelected = orders.filter(
-      (o) => selected.includes(o.id) && o.order_status === "spam"
-    );
-    if (spamSelected.length === 0) return alert("Only spam orders can be deleted.");
-    if (spamSelected.length !== selected.length) {
-      return alert("Some selected orders are not marked as spam.");
-    }
-    if (!confirm(`Permanently delete ${spamSelected.length} spam orders?`)) return;
-
-    for (const o of spamSelected) {
-      await supabase.from("orders").delete().eq("id", o.id);
-    }
-    setSelected([]);
-    fetchOrders();
-  };
-
-  const canPrintLabel = (order: Order) => Boolean(order);
-
   const handleSingleDownload = async (order: Order) => {
-    if (!canPrintLabel(order)) return;
     setGeneratingLabel(true);
     try {
       const formatted = formatOrdersForPrint([order]);
@@ -520,98 +406,34 @@ export default function AdminOrdersPage() {
     }
     setGeneratingLabel(false);
   };
-
-  const executeBulkPrint = async (isDownload: boolean) => {
-    const validOrders = orders.filter(
-      (o) => selected.includes(o.id) && canPrintLabel(o)
-    );
-    if (validOrders.length === 0) return alert("No printable orders selected.");
-
-    const unprintedOrders = validOrders.filter(
-      (o) => !printedOrderIds.includes(o.id) && !o.is_printed
-    );
-
-    let ordersToProcess = unprintedOrders;
-
-    if (unprintedOrders.length === 0) {
-      const forceReprint = confirm(
-        "All selected orders were already printed once. Do you want to re-print them all?"
-      );
-      if (!forceReprint) return;
-      ordersToProcess = validOrders;
-    }
-
-    setGeneratingLabel(true);
-    try {
-      const formatted = formatOrdersForPrint(ordersToProcess);
-      const filename = `labels-bulk-${ordersToProcess.length}.pdf`;
-      await generateLabelPDF(formatted, filename);
-
-      const newlyPrintedIds = ordersToProcess.map((o) => o.id);
-      setPrintedOrderIds((prev) => [...new Set([...prev, ...newlyPrintedIds])]);
-
-      try {
-        await supabase
-          .from("orders")
-          .update({ is_printed: true } as any)
-          .in("id", newlyPrintedIds);
-      } catch {}
-    } catch (err: any) {
-      alert((isDownload ? "Bulk download" : "Bulk print") + " failed: " + err.message);
-    }
-    setGeneratingLabel(false);
-  };
-
-  const handleBulkDownload = () => executeBulkPrint(true);
-  const handleBulkPrint = () => executeBulkPrint(false);
-
-  const toggleSelect = (id: string) => {
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  const toggleSelectAll = () => {
-    if (selected.length === orders.length) setSelected([]);
-    else setSelected(orders.map((o) => o.id));
-  };
-
-  const allSelectedSpam =
-    selected.length > 0 &&
-    orders
-      .filter((o) => selected.includes(o.id))
-      .every((o) => o.order_status === "spam");
-
-  return (
-    <div className="space-y-4">
-      {/* 1. Operating Date Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+        return (
+    <div className="space-y-4 p-2 md:p-4 max-w-6xl mx-auto">
+      {/* ১. ডেট ও মাস্টার পিকলিস্ট বার */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            📅 Operating Date:
-          </span>
+          <span className="text-xs font-bold text-slate-800">📅 তারিখ:</span>
           <input
             type="date"
             value={selectedDate}
             onChange={(e) => handleDateChange(e.target.value)}
-            className="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
+            className="text-xs font-semibold border border-slate-300 rounded-lg px-2.5 py-1.5 bg-slate-50 text-slate-800 outline-none"
           />
           <button
             onClick={() => handleDateChange(getTodayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
+            className={`text-xs px-2.5 py-1.5 rounded-lg font-semibold transition ${
               selectedDate === getTodayDateString()
                 ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                : "bg-slate-100 text-slate-700"
             }`}
           >
             Today
           </button>
           <button
             onClick={() => handleDateChange(getYesterdayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
+            className={`text-xs px-2.5 py-1.5 rounded-lg font-semibold transition ${
               selectedDate === getYesterdayDateString()
                 ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                : "bg-slate-100 text-slate-700"
             }`}
           >
             Yesterday
@@ -620,205 +442,336 @@ export default function AdminOrdersPage() {
 
         <button
           onClick={() => setShowSummaryModal(true)}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 rounded-lg font-semibold flex items-center gap-2 shadow-xs transition"
+          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5 shadow-xs transition"
         >
           📋 Master Picklist ({itemSummary.length} Items)
         </button>
       </div>
 
-      {/* 2. Instant Recalculated KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Total Orders
-          </p>
-          <p className="text-xl font-bold text-slate-800 mt-1">
-            {financialStats.totalOrders < 10 ? `0${financialStats.totalOrders}` : financialStats.totalOrders}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Date Filtered</p>
+      {/* ২. রিয়েল-টাইম ৪টি সামারি কার্ড */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+          <p className="text-[10px] font-bold text-slate-500 uppercase">মোট অর্ডার</p>
+          <p className="text-lg font-black text-slate-900 mt-0.5">{financialStats.totalOrders}</p>
         </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Gross Delivered
-          </p>
-          <p className="text-xl font-bold text-blue-600 mt-1">
-            ₹{financialStats.grossDelivered.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            {financialStats.deliveredCount} Delivered Orders
-          </p>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+          <p className="text-[10px] font-bold text-slate-500 uppercase">ডেলিভারি সম্পন্ন</p>
+          <p className="text-lg font-black text-blue-600 mt-0.5">₹{financialStats.grossDelivered.toFixed(2)}</p>
         </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Total Refunded
-          </p>
-          <p className="text-xl font-bold text-rose-600 mt-1">
-            - ₹{financialStats.totalRefunded.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">Auto-Deducted</p>
+        <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+          <p className="text-[10px] font-bold text-slate-500 uppercase">মোট রিফান্ড</p>
+          <p className="text-lg font-black text-rose-600 mt-0.5">- ₹{financialStats.totalRefunded.toFixed(2)}</p>
         </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/30 shadow-xs">
-          <p className="text-[11px] font-semibold text-emerald-800 uppercase tracking-wide">
-            Actual Net Sales
-          </p>
-          <p className="text-xl font-black text-emerald-700 mt-1">
-            ₹{financialStats.netSales.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Realized Net</p>
+        <div className="bg-white p-3 rounded-xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
+          <p className="text-[10px] font-bold text-emerald-800 uppercase">আসল ক্যাশ সেলস</p>
+          <p className="text-lg font-black text-emerald-700 mt-0.5">₹{financialStats.netSales.toFixed(2)}</p>
         </div>
       </div>
 
-      {/* 3. Filter Pipelines */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3 shadow-xs">
-        <div>
-          <p className="text-[11px] text-slate-500 font-semibold mb-1.5 uppercase tracking-wider">
-            Order Delivery & Payment Type
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {ORDER_TYPES.map((t) => (
-              <button
-                key={t.value}
-                onClick={() => setActiveOrderType(t.value)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                  activeOrderType === t.value
-                    ? "bg-purple-600 text-white shadow-xs"
-                    : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <p className="text-[11px] text-slate-500 font-semibold mb-1.5 uppercase tracking-wider">
-            Order Pipeline Status
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+      {/* ৩. ফিল্টার ট্যাব */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 space-y-2 shadow-xs">
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`px-3 py-1.5 text-xs rounded-xl font-semibold transition ${
+              activeTab === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700"
+            }`}
+          >
+            All Orders
+          </button>
+          {STATUSES.map((s) => (
             <button
-              onClick={() => setActiveTab("all")}
-              className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                activeTab === "all"
-                  ? "bg-slate-900 text-white shadow-xs"
-                  : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
+              key={s.value}
+              onClick={() => setActiveTab(s.value)}
+              className={`px-3 py-1.5 text-xs rounded-xl font-semibold transition ${
+                activeTab === s.value ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700"
               }`}
             >
-              All Orders
+              {s.label}
             </button>
-            {STATUSES.map((s) => (
-              <button
-                key={s.value}
-                onClick={() => setActiveTab(s.value)}
-                className={`px-3 py-1.5 text-xs rounded-lg font-medium transition ${
-                  activeTab === s.value
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100"
-                }`}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+          ))}
         </div>
       </div>
 
-      {/* 4. Bulk Actions */}
-      {selected.length > 0 && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-blue-900">
-            Selected: {selected.length}
-          </span>
-          <select
-            value={bulkStatus}
-            onChange={(e) => setBulkStatus(e.target.value)}
-            className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg text-slate-900 bg-white"
-          >
-            <option value="">Move Status To...</option>
-            <option value="current">Current Order</option>
-            <option value="out_for_delivery">Out for Delivery</option>
-            <option value="delivered">Delivered</option>
-            <option value="spam">Spam (Fraud Protection)</option>
-          </select>
-          <button
-            onClick={handleBulkStatus}
-            className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold"
-          >
-            Apply
-          </button>
-          <button
-            onClick={handleBulkPrint}
-            disabled={generatingLabel}
-            className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50"
-          >
-            🖨️ Print ({selected.length})
-          </button>
-          <button
-            onClick={handleBulkDownload}
-            disabled={generatingLabel}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold disabled:opacity-50"
-          >
-            📥 Download ({selected.length})
-          </button>
-          {allSelectedSpam && (
-            <button
-              onClick={handleBulkDelete}
-              className="bg-red-600 hover:bg-red-700 text-white text-xs px-3.5 py-1.5 rounded-lg font-semibold"
-            >
-              Delete Spam (Keep Profiles)
-            </button>
-          )}
-          <button
-            onClick={() => setSelected([])}
-            className="text-xs text-slate-600 hover:underline"
-          >
-            Clear Selection
-          </button>
-        </div>
-      )}
-
-      {/* 5. Orders Table */}
+      {/* ৪. অর্ডার কার্ড লিস্ট (Accordion / Dropdown View) */}
       {loading ? (
-        <div className="bg-white rounded-xl p-8 text-center text-slate-500 border border-slate-200">
-          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
-          <p className="text-xs">Loading orders for {selectedDate}...</p>
+        <div className="bg-white p-8 text-center text-xs text-slate-400 rounded-2xl border border-slate-200">
+          অর্ডার লোড হচ্ছে...
         </div>
       ) : orders.length === 0 ? (
-        <div className="bg-white rounded-xl p-10 text-center text-slate-500 border border-slate-200">
-          <p className="text-base font-semibold text-slate-700">No orders found</p>
-          <p className="text-xs text-slate-400 mt-1">
-            There are 00 records for the selected date ({selectedDate}).
-          </p>
+        <div className="bg-white p-8 text-center text-xs text-slate-400 rounded-2xl border border-slate-200">
+          এই তারিখে কোনো অর্ডার পাওয়া যায়নি।
         </div>
       ) : (
-        <OrdersTable
-          orders={orders}
-          selected={selected}
-          onToggleSelect={toggleSelect}
-          onToggleSelectAll={toggleSelectAll}
-          onStatusChange={handleSingleStatus}
-          onMarkRefundDone={handleMarkRefundDone}
-          onDelete={handleDelete}
-          onView={(o) => setViewingOrder(o)}
-          onDownload={handleSingleDownload}
-          canPrintLabel={canPrintLabel}
-          generatingLabel={generatingLabel}
-        />
+        <div className="space-y-3">
+          {orders.map((order) => {
+            const isExpanded = Boolean(expandedOrders[order.id]);
+            const address = order.addresses || {};
+            const customerName = order.profiles?.name || address.name || "গ্রাহক";
+            const customerPhone = order.profiles?.phone || address.phone || "";
+            const fullAddress = [
+              address.address_line1,
+              address.address_line2,
+              address.city,
+              address.pincode,
+              order.delivery_address,
+            ]
+              .filter(Boolean)
+              .join(", ");
+
+            const items = Array.isArray(order.order_items)
+              ? order.order_items
+              : Array.isArray(order.items)
+              ? order.items
+              : [];
+
+            const screenshotUrl =
+              order.screenshot_url ||
+              order.payment_screenshot ||
+              order.payment_proof_url ||
+              order.proof_url;
+
+            const isPending = order.order_status === "pending";
+            const isCurrent = order.order_status === "current";
+            const isOutForDelivery = order.order_status === "out_for_delivery";
+            const isDelivered = order.order_status === "delivered";
+
+            return (
+              <div
+                key={order.id}
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden transition"
+              >
+                {/* কার্ডের হেডার (ক্লিক করলে নিচে ড্রপডাউন খুলবে) */}
+                <div
+                  onClick={() => toggleExpand(order.id)}
+                  className="p-3.5 flex flex-wrap items-center justify-between gap-2 cursor-pointer hover:bg-slate-50/80 transition"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-slate-400 font-bold text-sm">
+                      {isExpanded ? "▲" : "▼"}
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 text-sm">
+                          #{order.order_number || order.id.slice(0, 6)}
+                        </span>
+                        <span className="text-xs font-semibold text-slate-600">
+                          • {customerName}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {new Date(order.created_at).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-black text-slate-900">
+                      ₹{Number(order.total_amount || 0).toFixed(2)}
+                    </span>
+
+                    {/* স্ট্যাটাস ব্যাজ */}
+                    <span
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full capitalize ${
+                        isPending
+                          ? "bg-amber-100 text-amber-800"
+                          : isCurrent
+                          ? "bg-blue-100 text-blue-800"
+                          : isOutForDelivery
+                          ? "bg-purple-100 text-purple-800"
+                          : isDelivered
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-slate-100 text-slate-700"
+                      }`}
+                    >
+                      {order.order_status}
+                    </span>
+
+                    {/* পেমেন্ট টাইপ */}
+                    <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md uppercase">
+                      {order.payment_type || "COD"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* ড্রপডাউন বডি (ক্লিক করলে উন্মোচিত হবে) */}
+                {isExpanded && (
+                  <div className="p-4 bg-slate-50/50 border-t border-slate-100 space-y-4">
+                    {/* গ্রিড: ঠিকানা ও বাজারের ফর্দ */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* পার্ট ১: কাস্টমার ও ঠিকানা */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+                        <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
+                          📍 কাস্টমার ও ডেলিভারি ঠিকানা
+                        </p>
+                        <p className="text-slate-900 font-semibold">{customerName}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-600">{customerPhone || "ফোন নম্বর নেই"}</span>
+                          {customerPhone && (
+                            <a
+                              href={`tel:${customerPhone}`}
+                              className="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded border border-blue-200 hover:bg-blue-100"
+                            >
+                              📞 কল করুন
+                            </a>
+                          )}
+                        </div>
+                        <p className="text-slate-600 leading-relaxed">
+                          {fullAddress || "ঠিকানা দেওয়া হয়নি"}
+                        </p>
+                      </div>
+
+                      {/* পার্ট ২: বাজারের ফর্দ */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+                        <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
+                          🛍️ বাজারের আইটেম লিস্ট ({items.length})
+                        </p>
+                        <div className="divide-y divide-slate-100 max-h-40 overflow-y-auto">
+                          {items.map((item: any, idx: number) => {
+                            const itemName = resolveItemName(item);
+                            const qty = item.quantity || item.qty || 1;
+                            const price = Number(item.price || item.unit_price || 0);
+                            return (
+                              <div key={idx} className="py-1.5 flex justify-between items-center text-xs">
+                                <div>
+                                  <span className="font-semibold text-slate-800">{itemName}</span>
+                                  <span className="text-slate-400 text-[11px] ml-1.5">
+                                    × {qty}
+                                  </span>
+                                </div>
+                                <span className="font-semibold text-slate-700">
+                                  ₹{(qty * price).toFixed(2)}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* পার্ট ৩: পেমেন্ট ভেরিফিকেশন ও স্ক্রিনশট প্রিভিউ */}
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-slate-800 uppercase text-[10px] tracking-wider">
+                          💳 পেমেন্ট খতিয়ান ও কাস্টমার স্ক্রিনশট
+                        </p>
+                        <span className="text-[11px] font-bold text-slate-600">
+                          পেমেন্ট স্ট্যাটাস:{" "}
+                          <span
+                            className={
+                              order.payment_status === "success"
+                                ? "text-emerald-600"
+                                : "text-amber-600"
+                            }
+                          >
+                            {order.payment_status || "Pending"}
+                          </span>
+                        </span>
+                      </div>
+
+                      {screenshotUrl ? (
+                        <div className="flex flex-wrap items-center gap-4 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                          <img
+                            src={screenshotUrl}
+                            alt="Payment Proof"
+                            onClick={() => setZoomedImage(screenshotUrl)}
+                            className="w-20 h-20 object-cover rounded-lg border border-slate-300 cursor-pointer hover:opacity-80 transition"
+                          />
+                          <div className="space-y-1">
+                            <p className="font-semibold text-slate-800">
+                              📷 কাস্টমার পেমেন্ট স্ক্রিনশট পাঠিয়েছেন
+                            </p>
+                            <p className="text-[11px] text-slate-500">
+                              ছবিতে ক্লিক করে বড় করে দেখে মিলিয়ে নিন।
+                            </p>
+                            {order.transaction_ref && (
+                              <p className="text-xs text-blue-600 font-mono font-bold">
+                                UTR / Ref: {order.transaction_ref}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic">
+                          কোনো পেমেন্ট স্ক্রিনশট আপলোড করা হয়নি (COD বা সরাসরি ক্যাশ অর্ডার)।
+                        </p>
+                      )}
+
+                      {/* পার্ট ৪: অ্যাকশন বাটনসমূহ */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                        {isPending && (
+                          <button
+                            onClick={() => handleSingleStatus(order, "current")}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-xs transition flex items-center gap-1.5"
+                          >
+                            ✓ Verify & Move to Current (পেমেন্ট সঠিক)
+                          </button>
+                        )}
+
+                        {isCurrent && (
+                          <button
+                            onClick={() => handleSingleStatus(order, "out_for_delivery")}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
+                          >
+                            🚚 ডেলিভারিতে পাঠান (Out for Delivery)
+                          </button>
+                        )}
+
+                        {isOutForDelivery && (
+                          <button
+                            onClick={() => handleSingleStatus(order, "delivered")}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3.5 py-2 rounded-xl transition flex items-center gap-1.5"
+                          >
+                            ✅ ডেলিভারি সম্পন্ন (Mark Delivered)
+                          </button>
+                        )}
+
+                        {isDelivered && (
+                          <button
+                            onClick={() => handleSingleStatus(order, "refund")}
+                            className="bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 font-semibold text-xs px-3 py-2 rounded-xl transition"
+                          >
+                            ↩️ রিফান্ড প্রসেস
+                          </button>
+                        )}
+
+                        {isPending && (
+                          <button
+                            onClick={() => handleSingleStatus(order, "spam")}
+                            className="bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 font-semibold text-xs px-3 py-2 rounded-xl transition"
+                          >
+                            ✕ ফেক / স্প্যাম
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleSingleDownload(order)}
+                          disabled={generatingLabel}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs px-3 py-2 rounded-xl transition ml-auto"
+                        >
+                          🏷️ স্লিপ প্রিন্ট
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* 6. Master Picklist Modal */}
+      {/* মাস্টার পিকলিস্ট মোডাল */}
       {showSummaryModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] flex flex-col">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100 mb-3">
               <div>
                 <h3 className="font-bold text-slate-900 text-base">📋 Master Item Picklist</h3>
-                <p className="text-xs text-slate-500">
-                  Target Date: <span className="font-semibold text-slate-800">{selectedDate}</span> (Current Orders Only)
-                </p>
+                <p className="text-xs text-slate-500">কারেন্ট অর্ডারের মোট মালের ফর্দ ({selectedDate})</p>
               </div>
               <button
                 onClick={() => setShowSummaryModal(false)}
@@ -828,23 +781,18 @@ export default function AdminOrdersPage() {
               </button>
             </div>
 
-            <div className="overflow-y-auto flex-1 pr-1 space-y-2">
+            <div className="overflow-y-auto flex-1 space-y-2 pr-1">
               {itemSummary.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">
-                  No active "Current Orders" available for procurement on this date.
+                  বর্তমানে প্যাকিংয়ের জন্য কোনো কারেন্ট অর্ডার নেই।
                 </p>
               ) : (
                 itemSummary.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-lg text-xs border border-slate-100">
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{item.name}</p>
-                      <p className="text-slate-500 text-[11px]">Requested in {item.orderCount} order(s)</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-1 rounded-full">
-                        Total: {item.totalQty} Units{item.totalWeight > 0 ? ` (${item.totalWeight.toFixed(2)} Kg)` : ""}
-                      </span>
-                    </div>
+                  <div key={idx} className="flex justify-between items-center p-2.5 bg-slate-50 rounded-xl text-xs border border-slate-100">
+                    <span className="font-bold text-slate-800">{item.name}</span>
+                    <span className="bg-emerald-100 text-emerald-800 font-bold px-2.5 py-1 rounded-full">
+                      মোট: {item.totalQty} Units {item.totalWeight > 0 ? `(${item.totalWeight.toFixed(2)} Kg)` : ""}
+                    </span>
                   </div>
                 ))
               )}
@@ -855,30 +803,51 @@ export default function AdminOrdersPage() {
                 onClick={() => setShowSummaryModal(false)}
                 className="px-4 py-1.5 text-xs text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 font-semibold"
               >
-                Close
+                বন্ধ করুন
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Modals */}
-      {viewingOrder && (
-        <OrderDetailModal
-          order={viewingOrder}
-          onClose={() => setViewingOrder(null)}
-        />
-      )}
+      {/* স্ক্রিনশট ফুলস্ক্রিন জুম মোডাল */}
+      {zoomedImage && (
+        <div
+          onClick={() => setZoomedImage(null)}
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
+        >
+          <div className="relative max-w-lg w-full bg-white rounded-2xl p-2">
+            <img src={zoomedImage} alt="Enlarged Proof" className="w-full h-auto rounded-xl" />
+            <p className="text-cent
+                          <p className="text-center text-xs text-slate-500 mt-2">স্ক্রিনের যেকোনো জায়গায় চাপ দিলে বন্ধ হবে</p>
+            </div>
+          </div>
+        )}
 
-      {refundOrder && (
-        <RefundModal
-          order={refundOrder}
-          onClose={() => setRefundOrder(null)}
-          onSubmit={submitRefund}
-          saving={savingRefund}
-        />
-      )}
-    </div>
+        {/* রিফান্ড মোডাল */}
+        {refundOrder && (
+          <RefundModal
+            order={refundOrder}
+            onClose={() => setRefundOrder(null)}
+            onSubmit={submitRefund}
+            saving={savingRefund}
+          />
+        )}
+      </div>
+    );
+}
+
+export default function AdminOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="p-8 text-center text-xs text-slate-400">
+          অর্ডার খাতা লোড হচ্ছে...
+        </div>
+      }
+    >
+      <OrdersContent />
+    </Suspense>
   );
-        }
-    
+}
+
