@@ -139,7 +139,7 @@ export default function AdminLayout({
       <main className="flex-1 p-3 md:p-6 overflow-x-hidden">
         {children}
       </main>
-    </div>
+    </div> 
   );
 }
 
