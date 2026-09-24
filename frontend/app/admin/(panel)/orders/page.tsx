@@ -817,9 +817,8 @@ function OrdersContent() {
           className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 cursor-pointer"
         >
           <div className="relative max-w-lg w-full bg-white rounded-2xl p-2">
-            <img src={zoomedImage} alt="Enlarged Proof" className="w-full h-auto rounded-xl" />
-            <p className="text-cent
-                          <p className="text-center text-xs text-slate-500 mt-2">স্ক্রিনের যেকোনো জায়গায় চাপ দিলে বন্ধ হবে</p>
+            <img src={zoomedImage} alt="Enlarged Proof" className="w-full h-auto rounded-xl" /
+              <p className="text-center text-xs text-slate-500 mt-2">স্ক্রিনের যেকোনো জায়গায় চাপ দিলে বন্ধ হবে</p>
             </div>
           </div>
         )}
