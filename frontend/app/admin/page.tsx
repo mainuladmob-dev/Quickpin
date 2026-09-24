@@ -10,8 +10,11 @@ export default function AdminRootPage() {
 
   useEffect(() => {
     const check = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
+      // ইউজার লগইন না থাকলে সরাসরি এডমিন লগইন পেজে পাঠানো
       if (!user) {
         router.replace("/admin/login");
         return;
@@ -21,22 +24,23 @@ export default function AdminRootPage() {
         .from("profiles")
         .select("role")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
+      // যদি রোল এডমিন, সুপার এডমিন বা স্টাফ হয় -> ড্যাশবোর্ডে পাঠানো
       if (
-        !profile ||
-        !["admin", "super_admin", "staff"].includes(profile.role)
+        profile &&
+        ["admin", "super_admin", "staff"].includes(profile.role)
       ) {
-        await supabase.auth.signOut();
-        router.replace("/admin/login");
+        router.replace("/admin/dashboard");
         return;
       }
 
-      router.replace("/admin/dashboard");
+      // সাধারণ কাস্টমার হলে তাকে লগআউট না করে সুরক্ষিতভাবে হোমপেজে পাঠানো
+      router.replace("/home");
     };
 
     check();
-  }, [router, supabase]);
+  }, [router]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
@@ -44,3 +48,4 @@ export default function AdminRootPage() {
     </div>
   );
 }
+
