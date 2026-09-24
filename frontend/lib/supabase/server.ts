@@ -12,17 +12,16 @@ export async function createClient() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             );
-          } catch {
-            // Server Component-এ কুকি রাইট করার চেষ্টা করলে প্রটেক্ট করার জন্য
+          } catch (error) {
+            // Server Component-এ কুকি রাইট ব্লক হলেও বিল্ড ক্র্যাশ করবে না
           }
         },
       },
     }
   );
 }
-
