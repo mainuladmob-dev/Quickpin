@@ -1,415 +1,179 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useState, Suspense } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-type Order = any;
+// প্রতিদিনের অপারেশনাল কাজ (Daily Live Flow)
+const PRIMARY_NAV = [
+  { name: "ড্যাশবোর্ড (হিসাব)", href: "/admin/dashboard", icon: "📊" },
+  { name: "অর্ডার খাতা (Orders)", href: "/admin/orders", icon: "📦" },
+  { name: "পণ্য ও স্টক (Products)", href: "/admin/products", icon: "🛍️" },
+];
 
-function getTodayDateString(): string {
-  const now = new Date();
-  const offset = now.getTimezoneOffset() * 60000;
-  return new Date(now.getTime() - offset).toISOString().split("T")[0];
-}
+// দোকান সেটিংস ও ব্যাকঅফিস (দরকার ছাড়া প্রতিদিন খোলার প্রয়োজন নেই)
+const SECONDARY_NAV = [
+  { name: "ক্যাটাগরি", href: "/admin/categories", icon: "📁" },
+  { name: "ব্যানার", href: "/admin/banners", icon: "🖼️" },
+  { name: "কাস্টমার তালিকা", href: "/admin/customers", icon: "👥" },
+  { name: "পেমেন্ট সেটিংস", href: "/admin/payments", icon: "💳" },
+  { name: "দোকান সেটিংস", href: "/admin/settings", icon: "⚙️" },
+  { name: "অ্যাডমিন স্টাফ", href: "/admin/admins", icon: "👤" },
+  { name: "টেকনিক্যাল লগ", href: "/admin/webhook-logs", icon: "🔗" },
+  { name: "প্রোফাইল", href: "/admin/profile", icon: "🔑" },
+];
 
-function getYesterdayDateString(): string {
-  const date = new Date();
-  date.setDate(date.getDate() - 1);
-  const offset = date.getTimezoneOffset() * 60000;
-  return new Date(date.getTime() - offset).toISOString().split("T")[0];
-}
-
-export default function AdminAccountsPage() {
-  const supabase = createClient();
-  const router = useRouter();
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [showMoreSettings, setShowMoreSettings] = useState(false);
   const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const router = useRouter();
+  const supabase = createClient();
 
-  const queryDate = searchParams.get("date");
-  const [selectedDate, setSelectedDate] = useState<string>(
-    queryDate || getTodayDateString()
-  );
-
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  // Sync Date with URL Bar
-  const handleDateChange = (newDate: string) => {
-    setSelectedDate(newDate);
-    const params = new URLSearchParams(searchParams.toString());
-    if (newDate) {
-      params.set("date", newDate);
-    } else {
-      params.delete("date");
-    }
-    router.replace(`${pathname}?${params.toString()}`);
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/admin/login");
   };
 
-  const fetchFinancials = async () => {
-    setLoading(true);
-    let query = supabase
-      .from("orders")
-      .select("*, order_items(*), addresses(*)")
-      .order("created_at", { ascending: false });
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* মোবাইল টপবার */}
+      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 text-lg"
+          aria-label="Open Menu"
+        >
+          ☰
+        </button>
+        <span className="font-bold text-slate-900 tracking-tight">Quickpin Admin</span>
+        <button
+          onClick={handleLogout}
+          className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 rounded-lg border border-rose-100"
+        >
+          Logout
+        </button>
+      </header>
 
-    if (selectedDate) {
-      const start = `${selectedDate}T00:00:00.000Z`;
-      const end = `${selectedDate}T23:59:59.999Z`;
-      query = query.gte("created_at", start).lte("created_at", end);
-    }
+      {/* মোবাইল ব্যাকড্রপ */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-2xs"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
 
-    const { data, error } = await query;
-    let orderList = (data as any) || [];
-
-    if (error) {
-      let fallback = supabase.from("orders").select("*").order("created_at", { ascending: false });
-      if (selectedDate) {
-        fallback = fallback
-          .gte("created_at", `${selectedDate}T00:00:00.000Z`)
-          .lte("created_at", `${selectedDate}T23:59:59.999Z`);
-      }
-      const { data: fbData } = await fallback;
-      orderList = fbData || [];
-    }
-
-    // Attach Customer Profile Names & Phones
-    const userIds = [...new Set(orderList.map((o: any) => o.user_id).filter(Boolean))];
-    let profileMap: Record<string, any> = {};
-
-    if (userIds.length > 0) {
-      const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, name, phone")
-        .in("id", userIds);
-
-      (profiles || []).forEach((p: any) => {
-        profileMap[p.id] = p;
-      });
-    }
-
-    const enriched = orderList.map((o: any) => ({
-      ...o,
-      profiles: o.user_id ? profileMap[o.user_id] || null : null,
-    }));
-
-    setOrders(enriched);
-    setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchFinancials();
-  }, [selectedDate]);
-
-  // 100% Automated Multi-Tier Financial & Drawer Accounting Engine
-  const accountsData = useMemo(() => {
-    let grossDelivered = 0;
-    let deliveredCount = 0;
-
-    let onlineAdvanceCollected = 0;
-    let rawCodCollected = 0;
-
-    let cashRefundDeductions = 0;
-    let upiRefundDeductions = 0;
-
-    orders.forEach((o) => {
-      const isDeliveredOrRefund = o.order_status === "delivered" || o.order_status === "refund";
-      const totalBill = Number(o.total_amount || 0);
-      const refundAmt = Number(o.refund_amount || 0);
-      const isCashRefund = o.refund_method?.toLowerCase() === "cash";
-      const isUpiRefund = o.refund_method?.toLowerCase() === "upi" || o.refund_method?.toLowerCase() === "bank";
-
-      if (isDeliveredOrRefund) {
-        grossDelivered += totalBill;
-        deliveredCount += 1;
-
-        if (o.payment_type === "full") {
-          onlineAdvanceCollected += totalBill;
-        } else if (o.payment_type === "partial") {
-          const advance = Number(o.partial_payment_amount || 0);
-          onlineAdvanceCollected += advance;
-          rawCodCollected += Math.max(0, totalBill - advance);
-        } else {
-          // Pure COD
-          rawCodCollected += totalBill;
-        }
-      }
-
-      // Track Refund Deductions Separately for Drawer vs Bank
-      if (refundAmt > 0 || o.order_status === "refund") {
-        const actualRefund = refundAmt > 0 ? refundAmt : totalBill;
-        if (isCashRefund) {
-          cashRefundDeductions += actualRefund;
-        } else {
-          // Default to UPI/Bank refund
-          upiRefundDeductions += actualRefund;
-        }
-      }
-    });
-
-    const totalRefunds = cashRefundDeductions + upiRefundDeductions;
-    const actualNetSales = Math.max(0, grossDelivered - totalRefunds);
-
-    // Physical Drawer Balance: COD Collected minus Doorstep Cash Refunded
-    const physicalCashInHand = Math.max(0, rawCodCollected - cashRefundDeductions);
-
-    // Bank Account Balance: Online Collected minus UPI Refunded
-    const netBankReceipts = Math.max(0, onlineAdvanceCollected - upiRefundDeductions);
-
-    return {
-      totalOrders: orders.length,
-      deliveredCount,
-      grossDelivered,
-      totalRefunds,
-      cashRefundDeductions,
-      upiRefundDeductions,
-      actualNetSales,
-      rawCodCollected,
-      physicalCashInHand,
-      onlineAdvanceCollected,
-      netBankReceipts,
-    };
-  }, [orders]);
-    return (
-    <div className="space-y-4">
-      {/* 1. Operating Date Bar */}
-      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-            📅 Operating Date:
-          </span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => handleDateChange(e.target.value)}
-            className="text-xs font-semibold border border-slate-300 rounded-lg px-3 py-1.5 bg-slate-50 text-slate-800 outline-none focus:ring-2 focus:ring-blue-500"
-          />
+      {/* সাইডবার প্যানেল */}
+      <aside
+        className={`fixed md:sticky top-0 h-screen w-64 bg-slate-900 text-white flex flex-col z-50 transition-transform duration-200 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
+      >
+        {/* ব্র্যান্ড হেডার */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+          <div>
+            <h2 className="text-base font-bold text-white tracking-wide">Quickpin</h2>
+            <p className="text-[10px] text-slate-400">সহজ এডমিন ও খতিয়ান</p>
+          </div>
           <button
-            onClick={() => handleDateChange(getTodayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
-              selectedDate === getTodayDateString()
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden text-slate-400 hover:text-white text-lg p-1"
           >
-            Today
-          </button>
-          <button
-            onClick={() => handleDateChange(getYesterdayDateString())}
-            className={`text-xs px-2.5 py-1.5 rounded-md font-medium transition ${
-              selectedDate === getYesterdayDateString()
-                ? "bg-blue-600 text-white"
-                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
-            }`}
-          >
-            Yesterday
+            ✕
           </button>
         </div>
-        <div className="text-xs text-slate-500 font-medium">
-          Filtered Records: <span className="font-bold text-slate-800">{accountsData.totalOrders}</span>
-        </div>
-      </div>
 
-      {/* 2. Top Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Gross Delivered Sales
-          </p>
-          <p className="text-xl font-bold text-blue-600 mt-1">
-            ₹{accountsData.grossDelivered.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            {accountsData.deliveredCount} Delivered Orders
-          </p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
-          <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">
-            Total Refund Deductions
-          </p>
-          <p className="text-xl font-bold text-rose-600 mt-1">
-            - ₹{accountsData.totalRefunds.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-slate-400 mt-0.5">
-            Cash + UPI Combined
-          </p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/40 shadow-xs">
-          <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-wide">
-            Actual Net Realized Sales
-          </p>
-          <p className="text-xl font-black text-emerald-700 mt-1">
-            ₹{accountsData.actualNetSales.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-emerald-600 mt-0.5">Realized Total</p>
-        </div>
-
-        <div className="bg-white p-3.5 rounded-xl border border-amber-200 bg-amber-50/40 shadow-xs">
-          <p className="text-[11px] font-bold text-amber-800 uppercase tracking-wide">
-            Physical Cash In Drawer
-          </p>
-          <p className="text-xl font-black text-amber-700 mt-1">
-            ₹{accountsData.physicalCashInHand.toFixed(2)}
-          </p>
-          <p className="text-[10px] text-amber-600 mt-0.5">Delivery Boy Deposit</p>
-        </div>
-      </div>
-
-      {/* 3. Detailed Dual-Drawer Reconciliation Panels */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Panel A: Physical Drawer Cash Reconciliation */}
-        <div className="bg-white rounded-xl border border-amber-200 p-4 shadow-xs space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-amber-100">
-            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-              💵 Physical Cash Drawer (COD Settlement)
-            </h4>
-            <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded-full">
-              Day-End Bag
-            </span>
+        {/* স্ক্রোলযোগ্য নেভিগেশন */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+          {/* জোন ১: মূল অপারেশন */}
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-1">
+              দৈনন্দিন কাজ (Operations)
+            </p>
+            <nav className="space-y-1">
+              {PRIMARY_NAV.map((item) => {
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
+                      isActive
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </nav>
           </div>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-slate-600">
-              <span>Gross COD Expected from Customers:</span>
-              <span className="font-semibold text-slate-800">
-                ₹{accountsData.rawCodCollected.toFixed(2)}
-              </span>
-            </div>
-            <div className="flex justify-between text-rose-600">
-              <span>Doorstep Cash Refunds Handed Over:</span>
-              <span className="font-semibold">
-                - ₹{accountsData.cashRefundDeductions.toFixed(2)}
-              </span>
-            </div>
-            <div className="pt-2 border-t border-dashed border-amber-200 flex justify-between items-center bg-amber-50/70 p-2 rounded-lg font-bold">
-              <span className="text-amber-900">Exact Cash To Collect From Delivery Boy:</span>
-              <span className="text-base text-amber-700 font-mono">
-                ₹{accountsData.physicalCashInHand.toFixed(2)}
-              </span>
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-400">
-            * UPI refunds do not touch this drawer balance as the cash remained in customer's hand.
-          </p>
-        </div>
 
-        {/* Panel B: Online Bank Settlements */}
-        <div className="bg-white rounded-xl border border-purple-200 p-4 shadow-xs space-y-3">
-          <div className="flex items-center justify-between pb-2 border-b border-purple-100">
-            <h4 className="font-bold text-slate-800 text-sm flex items-center gap-2">
-              🏦 Direct Bank & QR Settlements
-            </h4>
-            <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
-              0% Gateway Fee
-            </span>
-          </div>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between text-slate-600">
-              <span>Advance / Full Online QR Payments:</span>
-              <span className="font-semibold text-slate-800">
-                ₹{accountsData.onlineAdvanceCollected.toFixed(2)}
+          {/* জোন ২: ড্রপডাউনে গোছানো ব্যাকঅফিস সেটিংস */}
+          <div className="pt-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={() => setShowMoreSettings(!showMoreSettings)}
+              className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800 hover:text-white transition"
+            >
+              <span className="flex items-center gap-2">
+                <span>⚙️</span> দোকান ও সেটিংস
               </span>
-            </div>
-            <div className="flex justify-between text-rose-600">
-              <span>UPI / Bank Direct Refunds Paid:</span>
-              <span className="font-semibold">
-                - ₹{accountsData.upiRefundDeductions.toFixed(2)}
-              </span>
-            </div>
-            <div className="pt-2 border-t border-dashed border-purple-200 flex justify-between items-center bg-purple-50/70 p-2 rounded-lg font-bold">
-              <span className="text-purple-900">Net Realized In Bank Account:</span>
-              <span className="text-base text-purple-700 font-mono">
-                ₹{accountsData.netBankReceipts.toFixed(2)}
-              </span>
-            </div>
-          </div>
-          <p className="text-[10px] text-slate-400">
-            * Matches your direct bank/UPI statement minus initiated customer payouts.
-          </p>
-        </div>
-      </div>
+              <span className="text-[10px]">{showMoreSettings ? "▲" : "▼"}</span>
+            </button>
 
-      {/* 4. Financial Audit Register */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-3.5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-            Daily Financial Breakdown ({orders.length} Orders)
-          </h4>
-        </div>
-
-        {loading ? (
-          <div className="p-8 text-center text-slate-500 text-xs">
-            Loading accounts ledger...
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs">
-            No transactions found for {selectedDate}.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-100/75 text-slate-600 font-bold border-b border-slate-200 text-[11px]">
-                  <th className="p-2.5">Order</th>
-                  <th className="p-2.5">Customer</th>
-                  <th className="p-2.5">Type</th>
-                  <th className="p-2.5 text-right">Gross Bill</th>
-                  <th className="p-2.5 text-right">Refund / Deduction</th>
-                  <th className="p-2.5 text-right">Net Realized</th>
-                  <th className="p-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {orders.map((o) => {
-                  const gross = Number(o.total_amount || 0);
-                  const refundVal = Number(o.refund_amount || 0);
-                  const net = Math.max(0, gross - refundVal);
-                  const isRefund = o.order_status === "refund" || refundVal > 0;
-
+            {showMoreSettings && (
+              <nav className="mt-1 space-y-0.5 pl-2">
+                {SECONDARY_NAV.map((item) => {
+                  const isActive = pathname === item.href;
                   return (
-                    <tr key={o.id} className="hover:bg-slate-50/80 transition">
-                      <td className="p-2.5 font-bold text-slate-900">
-                        #{o.order_number}
-                      </td>
-                      <td className="p-2.5 text-slate-700">
-                        <p className="font-semibold">{o.profiles?.name || o.customer_name || "Customer"}</p>
-                        <p className="text-[10px] text-slate-400">{o.profiles?.phone || o.customer_phone || ""}</p>
-                      </td>
-                      <td className="p-2.5">
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700">
-                          {o.payment_type === "full" ? "Full Paid" : "Advance + COD"}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right font-semibold text-slate-800">
-                        ₹{gross.toFixed(2)}
-                      </td>
-                      <td className="p-2.5 text-right font-semibold text-rose-600">
-                        {isRefund ? `- ₹${refundVal.toFixed(2)} (${o.refund_method?.toUpperCase() || "UPI"})` : "—"}
-                      </td>
-                      <td className="p-2.5 text-right font-bold text-emerald-700 font-mono">
-                        ₹{net.toFixed(2)}
-                      </td>
-                      <td className="p-2.5 text-center">
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${
-                            o.order_status === "delivered"
-                              ? "bg-emerald-100 text-emerald-800"
-                              : o.order_status === "refund"
-                              ? "bg-rose-100 text-rose-800"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          {o.order_status}
-                        </span>
-                      </td>
-                    </tr>
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setSidebarOpen(false)}
+                      className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs transition ${
+                        isActive
+                          ? "bg-slate-800 text-blue-400 font-semibold"
+                          : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
+                      }`}
+                    >
+                      <span>{item.icon}</span>
+                      <span>{item.name}</span>
+                    </Link>
                   );
                 })}
-              </tbody>
-            </table>
+              </nav>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+
+        {/* সাইডবার ফুটার */}
+        <div className="p-3 border-t border-slate-800 hidden md:block">
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-rose-400 bg-rose-950/40 hover:bg-rose-900/50 rounded-xl border border-rose-900/50 transition"
+          >
+            🚪 Logout
+          </button>
+        </div>
+      </aside>
+
+      {/* পেজ কনটেন্ট (Suspense Boundary দিয়ে সুরক্ষিত) */}
+      <main className="flex-1 overflow-x-hidden min-h-screen">
+        <Suspense
+          fallback={
+            <div className="p-6 text-xs text-slate-400 flex items-center gap-2">
+              <span className="animate-spin">⏳</span> পেজ লোড হচ্ছে...
+            </div>
+          }
+        >
+          {children}
+        </Suspense>
+      </main>
     </div>
   );
-            }
+                    }
