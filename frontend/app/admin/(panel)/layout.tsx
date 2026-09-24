@@ -1,199 +1,169 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 
 export default function AdminPanelLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [backofficeOpen, setBackofficeOpen] = useState(true);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const pathname = usePathname();
-  const supabase = createClient();
 
-  const handleLogout = async () => {
-    if (confirm("আপনি কি অ্যাডমিন প্যানেল থেকে লগআউট করতে চান?")) {
-      await supabase.auth.signOut();
-      window.location.href = "/admin/login";
+  // পেজ পরিবর্তন হলে মোবাইল মেনু স্বয়ংক্রিয়ভাবে বন্ধ হবে
+  useEffect(() => {
+    setIsDrawerOpen(false);
+  }, [pathname]);
+
+  // মেনু খোলা থাকলে পেজের ব্যাকগ্রাউন্ড স্ক্রোল বন্ধ রাখা
+  useEffect(() => {
+    if (isDrawerOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "unset";
     }
-  };
+    return () => {
+      document.body.style.overflow = "unset";
+    };
+  }, [isDrawerOpen]);
 
-  const mainMenuItems = [
-    { name: "Orders", href: "/admin/orders", icon: "📦" },
-    { name: "Products", href: "/admin/products", icon: "🛍️" },
-    { name: "Categories", href: "/admin/categories", icon: "📁" },
-    { name: "Settings", href: "/admin/settings", icon: "⚙️" },
+  const navItems = [
+    { label: "📦 Orders", href: "/admin/orders" },
+    { label: "🥦 Products", href: "/admin/products" },
+    { label: "👥 Customers", href: "/admin/users" },
   ];
 
-  const backofficeItems = [
-    { name: "Banners", href: "/admin/banners", icon: "🖼️" },
-    { name: "Customers", href: "/admin/customers", icon: "👥" },
-    { name: "Admins", href: "/admin/admins", icon: "🛡️" },
-    { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "📡" },
-  ];
-
-  const renderNavLinks = () => (
-    <div className="space-y-4">
-      {/* মূল ড্যাশবোর্ড */}
-      <div>
-        <p className="px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-          মূল ড্যাশবোর্ড
-        </p>
-        <nav className="space-y-1">
-          {mainMenuItems.map((item) => {
-            const isActive =
-              pathname === item.href ||
-              (item.href === "/admin/orders" && pathname === "/admin");
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={() => setSidebarOpen(false)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
-                  isActive
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                <span>{item.icon}</span>
-                <span>{item.name}</span>
-              </Link>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* ব্যাকঅফিস ও অডিট */}
-      <div>
-        <button
-          onClick={() => setBackofficeOpen(!backofficeOpen)}
-          className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-500 hover:bg-slate-50 rounded-lg transition"
+  return (
+    <div className="min-h-screen bg-slate-100/70 text-slate-800">
+      {/* ১. স্টিকি মোবাইল হেডার */}
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 py-2.5 flex items-center justify-between md:hidden shadow-2xs">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsDrawerOpen(true)}
+            aria-label="Open navigation menu"
+            className="p-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-base font-bold active:scale-95 transition"
+          >
+            ☰
+          </button>
+          <span className="font-black text-sm text-slate-900 tracking-tight">
+            Quickpin Admin
+          </span>
+        </div>
+        <Link
+          href="/"
+          className="text-[11px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 hover:bg-blue-100 transition"
         >
-          <span className="flex items-center gap-1.5">
-            <span>📁</span> ব্যাকঅফিস ও অডিট
-          </span>
-          <span className="text-[10px] text-slate-400">
-            {backofficeOpen ? "▲" : "▼"}
-          </span>
-        </button>
+          🌐 Store
+        </Link>
+      </header>
 
-        {backofficeOpen && (
-          <nav className="space-y-1 mt-1 pl-2">
-            {backofficeItems.map((item) => {
-              const isActive = pathname === item.href;
+      {/* ২. মোবাইল ভাসমান সাইড ড্রয়ার ও ব্যাকড্রপ */}
+      {isDrawerOpen && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          {/* কালো ব্যাকড্রপ (বাইরে ট্যাপ করলেই বন্ধ হবে) */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-2xs transition-opacity"
+            onClick={() => setIsDrawerOpen(false)}
+          />
+
+          {/* স্ক্রিনের বাঁ দিক থেকে ভেসে ওঠা সাইড ড্রয়ার */}
+          <div className="fixed inset-y-0 left-0 w-64 bg-white shadow-2xl p-4 flex flex-col justify-between z-50 animate-in slide-in-from-left duration-200">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⚡</span>
+                  <span className="font-black text-sm text-slate-900">
+                    Quickpin Panel
+                  </span>
+                </div>
+                <button
+                  onClick={() => setIsDrawerOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* নেভিগেশন লিঙ্কসমূহ */}
+              <nav className="space-y-1">
+                {navItems.map((item) => {
+                  const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition ${
+                        isActive
+                          ? "bg-slate-900 text-white shadow-xs"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* ড্রয়ারের ফুটার */}
+            <div className="pt-3 border-t border-slate-100">
+              <Link
+                href="/"
+                className="w-full flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition"
+              >
+                🌐 View Storefront
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ৩. ডেস্কটপ সাইডবার (পিসি স্ক্রিনের জন্য ফিক্সড) */}
+      <aside className="hidden md:flex md:w-60 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-slate-200 p-4 justify-between z-30">
+        <div className="space-y-6">
+          <div className="flex items-center gap-2 px-2">
+            <span className="text-xl">⚡</span>
+            <span className="font-black text-base text-slate-900 tracking-tight">
+              Quickpin Admin
+            </span>
+          </div>
+
+          <nav className="space-y-1.5">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
               return (
                 <Link
-                  key={item.name}
+                  key={item.href}
                   href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-semibold transition ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition ${
                     isActive
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-600 hover:bg-slate-100"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                   }`}
                 >
-                  <span>{item.icon}</span>
-                  <span>{item.name}</span>
+                  {item.label}
                 </Link>
               );
             })}
           </nav>
-        )}
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen bg-slate-50/60 flex flex-col md:flex-row">
-      {/* মোবাইল টপবার */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 py-3 flex items-center justify-between md:hidden">
-        <button
-          onClick={() => setSidebarOpen(true)}
-          className="px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs font-bold flex items-center gap-1.5 shadow-2xs active:scale-95 transition"
-        >
-          ☰ মেনু
-        </button>
-
-        <h1 className="text-sm font-black text-slate-900 tracking-tight">
-          Quickpin Admin
-        </h1>
-
-        <button
-          onClick={handleLogout}
-          className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs border border-rose-200 shadow-2xs active:scale-95 transition"
-        >
-          Logout
-        </button>
-      </header>
-
-      {/* মোবাইল ভাসমান সাইড ড্রয়ার (Floating Drawer) */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-50 md:hidden flex">
-          {/* কালো ব্যাকড্রপ */}
-          <div
-            onClick={() => setSidebarOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
-          />
-
-          {/* সাইডবার প্যানেল */}
-          <aside className="relative w-72 max-w-[80vw] bg-white h-full shadow-2xl flex flex-col z-10">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <span className="font-black text-slate-900 text-base">
-                Quickpin Admin
-              </span>
-              <button
-                onClick={() => setSidebarOpen(false)}
-                className="px-2.5 py-1 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg flex items-center gap-1"
-              >
-                ✕ বন্ধ
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4">
-              {renderNavLinks()}
-            </div>
-
-            <div className="p-4 border-t border-slate-100">
-              <button
-                onClick={handleLogout}
-                className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs flex items-center justify-center gap-2 border border-rose-200 transition"
-              >
-                🚪 Logout
-              </button>
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {/* ডেস্কটপ সাইডবার */}
-      <aside className="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 bg-white border-r border-slate-200">
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <span className="font-black text-slate-900 text-base">
-            Quickpin Admin
-          </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          {renderNavLinks()}
-        </div>
-
-        <div className="p-4 border-t border-slate-100">
-          <button
-            onClick={handleLogout}
-            className="w-full py-2 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs flex items-center justify-center gap-2 border border-rose-200 transition"
+        <div className="pt-4 border-t border-slate-100">
+          <Link
+            href="/"
+            className="w-full flex items-center justify-center gap-1.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-200 transition"
           >
-            🚪 Logout
-          </button>
+            🌐 View Storefront
+          </Link>
         </div>
       </aside>
 
-      {/* মূল কনটেন্ট এরিয়া */}
-      <main className="flex-1 md:pl-64 p-3 sm:p-4 md:p-6">
-        {children}
+      {/* ৪. মূল কনটেন্ট রেন্ডারিং এরিয়া */}
+      <main className="md:pl-60">
+        <div className="p-3 md:p-6 max-w-6xl mx-auto">{children}</div>
       </main>
     </div>
   );
