@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import Ordercard from "./ordercard";
-import Ordermodals from "./ordermodals";
+import OrderCard from "./ordercard";
+import OrderModals from "./ordermodals";
 import RefundModal from "./RefundModal";
 
 export type OrderItem = {
@@ -61,7 +61,7 @@ export default function AdminOrdersPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [deliveryFilter, setDeliveryFilter] = useState<string>("all");
 
-  // UI ও মোডাল স্টেট
+  // মোডাল ও ভিউ স্টেট
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [showPicklistModal, setShowPicklistModal] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
@@ -70,7 +70,7 @@ export default function AdminOrdersPage() {
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [savingRefund, setSavingRefund] = useState(false);
 
-  // অর্ডার লোড করার কুয়েরি
+  // ডাটাবেজ থেকে অর্ডার লোড
   const fetchOrders = useCallback(async () => {
     setLoading(true);
     try {
@@ -172,7 +172,7 @@ export default function AdminOrdersPage() {
     fetchOrders();
   };
 
-  // স্ক্রিনশট দেখা
+  // স্ক্রিনশট প্রিভিউ
   const handleViewScreenshot = async (url?: string | null) => {
     if (!url) return;
     if (url.startsWith("http")) {
@@ -218,7 +218,7 @@ export default function AdminOrdersPage() {
     }
   };
 
-  // স্লিপ প্রিন্ট
+  // ক্যাশ মেমো / স্লিপ প্রিন্ট
   const handlePrintSlip = (order: Order) => {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
@@ -261,7 +261,7 @@ export default function AdminOrdersPage() {
     printWindow.document.close();
   };
 
-  // KPI হিসাব
+  // আসল ক্যাশ ও সেলস হিসাব (KPI)
   const kpis = useMemo(() => {
     const totalCount = orders.length;
     const deliveredOrders = orders.filter((o) => o.order_status === "delivered");
@@ -314,6 +314,16 @@ export default function AdminOrdersPage() {
           >
             Today
           </button>
+          <button
+            onClick={() => {
+              const d = new Date();
+              d.setDate(d.getDate() - 1);
+              setSelectedDate(d.toISOString().split("T")[0]);
+            }}
+            className="px-2.5 py-1.5 text-xs font-semibold bg-slate-100 text-slate-700 rounded-lg border border-slate-200 hover:bg-slate-200"
+          >
+            Yesterday
+          </button>
         </div>
 
         <button
@@ -344,7 +354,7 @@ export default function AdminOrdersPage() {
         </div>
       </div>
 
-      {/* ফিল্টার ট্যাবসমূহ */}
+      {/* ফিল্টার বাটনসমূহ */}
       <div className="space-y-2">
         <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
           {[
@@ -421,7 +431,7 @@ export default function AdminOrdersPage() {
         </div>
       )}
 
-      {/* মোডালসমূহ (Picklist, Screenshot Reject & Zoom) */}
+      {/* মোডালসমূহ */}
       <OrderModals
         orders={orders}
         selectedDate={selectedDate}
@@ -447,5 +457,5 @@ export default function AdminOrdersPage() {
       )}
     </div>
   );
-        }
-      
+            }
+              
