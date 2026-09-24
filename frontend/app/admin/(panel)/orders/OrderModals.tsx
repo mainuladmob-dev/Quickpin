@@ -1,150 +1,258 @@
-// @ts-nocheck
 "use client";
 
-import { useState, useMemo } from "react";
+import React, { useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+export type OrderItem = {
+  id: string;
+  product_name?: string;
+  name?: string;
+  quantity: number;
+  unit_price?: number;
+  price?: number;
+  unit?: string;
+  weight?: number;
+};
+
+export type Order = {
+  id: string;
+  order_number: string;
+  total_amount: number;
+  paid_amount: number;
+  remaining_amount: number;
+  payment_method: string | null;
+  payment_status: string;
+  payment_type: "full" | "partial";
+  partial_payment_amount: number;
+  upi_transaction_id?: string | null;
+  payment_screenshot_url?: string | null;
+  screenshot_status?: string;
+  screenshot_attempts?: number;
+  rejection_reason?: string | null;
+  order_status: string;
+  delivery_type?: string;
+  delivery_address?: string | null;
+  refund_amount?: number;
+  created_at: string;
+  user_id: string | null;
+  profile?: {
+    name?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+  } | null;
+  items?: OrderItem[];
+};
+
+interface OrderModalsProps {
+  orders: Order[];
+  selectedDate: string;
+  showPicklist: boolean;
+  onClosePicklist: () => void;
+  rejectingOrder: Order | null;
+  onCloseReject: () => void;
+  actionLoading: boolean;
+  setActionLoading: (loading: boolean) => void;
+  zoomedImage: string | null;
+  onCloseZoom: () => void;
+  onSuccess: () => void;
+}
+
 export default function OrderModals({
-  orders = [],
+  orders,
   selectedDate,
   showPicklist,
   onClosePicklist,
   rejectingOrder,
   onCloseReject,
-  actionLoading = false,
+  actionLoading,
   setActionLoading,
   zoomedImage,
   onCloseZoom,
   onSuccess,
-}: any) {
+}: OrderModalsProps) {
   const supabase = createClient();
   const [rejectReason, setRejectReason] = useState("");
 
-  // ১. মাস্টার পিকলিস্ট হিসাব
-  const picklistItems = useMemo(() => {
-    const map: Record<string, { name: string; qty: number; unit: string; weight: number }> = {};
-    
-    orders
-      ?.filter((o: any) => o?.order_status === "current")
-      .forEach((o: any) => {
-        (o?.items || []).forEach((item: any) => {
-          const name = item?.product_name || item?.name || "Unknown Product";
-          if (!map[name]) {
-            map[name] = { 
-              name, 
-              qty: 0, 
-              unit: item?.unit || "Unit", 
-              weight: 0 
-            };
-          }
-          const q = Number(item?.quantity || 0);
-          map[name].qty += q;
-          if (item?.weight) {
-            map[name].weight += Number(item.weight) * q;
-          }
-        });
-      });
+  // শুধুমাত্র CURRENT অর্ডারের মোট পণ্য একত্রিত (Aggregate) করার লজিক
+  const { picklistItems, currentOrdersCount } = useMemo(() => {
+    const currentOrders = orders.filter((o) => o.order_status === "current");
+    const itemMap: Record<
+      string,
+      { name: string; quantity: number; unit: string; count: number }
+    > = {};
 
-    return Object.values(map);
+    currentOrders.forEach((order) => {
+      (order.items || []).forEach((item) => {
+        const name = (item.product_name || item.name || "Unknown").trim();
+        const unit = (item.unit || "পিস").trim();
+        const key = `${name.toLowerCase()}__${unit.toLowerCase()}`;
+
+        if (!itemMap[key]) {
+          itemMap[key] = {
+            name,
+            quantity: 0,
+            unit,
+            count: 0,
+          };
+        }
+        itemMap[key].quantity += Number(item.quantity || 0);
+        itemMap[key].count += 1;
+      });
+    });
+
+    const list = Object.values(itemMap).sort((a, b) =>
+      a.name.localeCompare(b.name)
+    );
+
+    return {
+      picklistItems: list,
+      currentOrdersCount: currentOrders.length,
+    };
   }, [orders]);
 
-  // ২. স্ক্রিনশট রিজেক্ট করার ফাংশন
-  const submitRejectScreenshot = async () => {
+  // মাস্টার পিকলিস্ট প্রিন্ট
+  const handlePrintPicklist = () => {
+    const printWin = window.open("", "_blank");
+    if (!printWin) return;
+    printWin.document.write(`
+      <html>
+        <head>
+          <title>Master Picklist - ${selectedDate}</title>
+          <style>
+            body { font-family: sans-serif; padding: 20px; font-size: 13px; color: #111; }
+            h2 { margin: 0 0 4px 0; text-align: center; }
+            p { text-align: center; margin: 0 0 16px 0; color: #555; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; }
+            th { background-color: #f4f4f4; font-weight: bold; }
+            .text-center { text-align: center; }
+          </style>
+        </head>
+        <body>
+          <h2>Quickpin Packing Picklist (Current Orders Only)</h2>
+          <p>Date: ${selectedDate} | Total Current Orders: ${currentOrdersCount}</p>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 40px;">#</th>
+                <th>Product Name</th>
+                <th class="text-center">Total Quantity</th>
+                <th class="text-center">Total Orders</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${picklistItems
+                .map(
+                  (item, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td><strong>${item.name}</strong></td>
+                  <td class="text-center"><strong>${item.quantity}</strong>${item.unit}</td>
+                  <td class="text-center">${item.count}</td>
+                </tr>
+              `
+                )
+                .join("")}
+            </tbody>
+          </table>
+          <script>window.onload = () => { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
+
+  // স্ক্রিনশট রিজেক্ট সাবমিট
+  const handleRejectSubmit = async () => {
     if (!rejectingOrder || !rejectReason.trim()) {
-      alert("অনুগ্রহ করে রিজেক্ট করার কারণ লিখুন");
+      alert("দয়া করে রিজেক্ট করার কারণ নির্বাচন বা উল্লেখ করুন");
       return;
     }
+    setActionLoading(true);
+    const { error } = await supabase
+      .from("orders")
+      .update({
+        screenshot_status: "rejected",
+        rejection_reason: rejectReason.trim(),
+        order_status: "pending",
+        status_changed_at: new Date().toISOString(),
+      })
+      .eq("id", rejectingOrder.id);
 
-    if (setActionLoading) setActionLoading(true);
-
-    const newAttempts = Number(rejectingOrder?.screenshot_attempts || 0) + 1;
-    const maxAttempts = 3;
-
-    const updateData: any = {
-      payment_status: "pending",
-      screenshot_status: "rejected",
-      rejection_reason: rejectReason.trim(),
-      screenshot_attempts: newAttempts,
-    };
-
-    if (newAttempts >= maxAttempts) {
-      updateData.order_status = "spam";
-      updateData.payment_status = "failed";
-      updateData.status_changed_at = new Date().toISOString();
+    setActionLoading(false);
+    if (error) {
+      alert("রিজেক্ট করা যায়নি: " + error.message);
+      return;
     }
-
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update(updateData)
-        .eq("id", rejectingOrder.id);
-
-      if (error) throw error;
-
-      alert("পেমেন্ট স্ক্রিনশট রিজেক্ট করা হয়েছে।");
-      setRejectReason("");
-      if (onCloseReject) onCloseReject();
-      if (onSuccess) onSuccess();
-    } catch (err: any) {
-      alert("রিজেক্ট করতে সমস্যা হয়েছে: " + (err.message || "Unknown error"));
-    } finally {
-      if (setActionLoading) setActionLoading(false);
-    }
+    setRejectReason("");
+    onCloseReject();
+    onSuccess();
   };
 
   return (
     <>
-      {/* --- ১. মাস্টার পিকলিস্ট মডাল --- */}
+      {/* ১. MASTER PICKLIST MODAL (Only Current Orders) */}
       {showPicklist && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3">
+          <div className="bg-white w-full max-w-lg rounded-2xl p-4 shadow-xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div>
-                <h3 className="text-sm font-bold text-slate-800">📋 মাস্টার পিকলিস্ট (চলমান অর্ডার)</h3>
-                <p className="text-[11px] text-slate-500">তারিখ: {selectedDate || "আজকের দিন"}</p>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                  📋 Master Picklist
+                </h3>
+                <p className="text-[11px] font-semibold text-emerald-600">
+                  Current Orders: {currentOrdersCount} টি
+                </p>
               </div>
               <button
                 onClick={onClosePicklist}
-                className="text-slate-400 hover:text-slate-700 text-lg font-bold px-2 py-1"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 text-sm font-bold"
               >
                 ✕
               </button>
             </div>
 
-            <div className="p-4 overflow-y-auto flex-1 divide-y divide-slate-100">
+            {/* আইটেম তালিকা */}
+            <div className="flex-1 overflow-y-auto py-2 space-y-1.5 divide-y divide-slate-100">
               {picklistItems.length === 0 ? (
-                <p className="text-center text-xs text-slate-400 py-8">
-                  চলমান কোনো অর্ডারের আইটেম পাওয়া যায়নি।
-                </p>
+                <div className="text-center py-8 text-xs text-slate-400 font-semibold">
+                  প্যাকিংয়ের জন্য বর্তমানে কোনো কারেন্ট অর্ডার নেই।
+                </div>
               ) : (
-                picklistItems.map((item, idx) => (
-                  <div key={idx} className="py-2.5 flex items-center justify-between text-xs">
+                picklistItems.map((item, index) => (
+                  <div
+                    key={index}
+                    className="pt-1.5 flex items-center justify-between text-xs"
+                  >
                     <div>
-                      <p className="font-semibold text-slate-800">{item.name}</p>
-                      {item.weight > 0 && (
-                        <p className="text-[10px] text-slate-400">ওজন: {item.weight.toFixed(2)} kg</p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      <span className="inline-block bg-blue-50 text-blue-700 font-bold px-2 py-1 rounded-md border border-blue-100">
-                        {item.qty} {item.unit}
+                      <span className="font-bold text-slate-800">
+                        {item.name}
                       </span>
+                      <span className="text-[10px] text-slate-400 ml-1.5">
+                        ({item.count} টি অর্ডারে)
+                      </span>
+                    </div>
+                    <div className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                      {item.quantity} {item.unit}
                     </div>
                   </div>
                 ))
               )}
             </div>
 
-            <div className="p-3 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+            {/* ফুটার অ্যাকশন বাটন */}
+            <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
               <button
-                onClick={() => window.print()}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition"
+                onClick={handlePrintPicklist}
+                disabled={picklistItems.length === 0}
+                className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5"
               >
-                🖨️ প্রিন্ট
+                🖨️ Print Picklist
               </button>
               <button
                 onClick={onClosePicklist}
-                className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-semibold rounded-lg transition"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
               >
                 বন্ধ করুন
               </button>
@@ -153,76 +261,94 @@ export default function OrderModals({
         </div>
       )}
 
-      {/* --- ২. স্ক্রিনশট রিজেক্ট করার মডাল --- */}
+      {/* ২. SCREENSHOT REJECT MODAL */}
       {rejectingOrder && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-2xl border border-slate-200 space-y-3">
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-3">
+          <div className="bg-white w-full max-w-sm rounded-2xl p-4 shadow-xl space-y-3">
             <div>
-              <h3 className="text-sm font-bold text-slate-800">
-                ❌ স্ক্রিনশট রিজেক্ট (#{rejectingOrder.order_number || rejectingOrder.id})
+              <h3 className="text-xs font-black text-slate-900">
+                পেমেন্ট বাতিল / রিজেক্ট (#{rejectingOrder.order_number})
               </h3>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                পূর্বের রিজেক্ট সংখ্যা: {rejectingOrder.screenshot_attempts || 0} / 3
+                বাতিল করার কারণ নির্বাচন করুন:
               </p>
             </div>
 
-            <div>
-              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                রিজেক্ট করার কারণ:
-              </label>
-              <textarea
-                rows={3}
-                value={rejectReason}
-                onChange={(e) => setRejectReason(e.target.value)}
-                placeholder="যেমন: UTR নম্বর মেলেনি অথবা ভুল স্ক্রিনশট..."
-                className="w-full text-xs p-2.5 border border-slate-200 rounded-xl outline-none focus:border-rose-500 resize-none"
-              />
+            {/* দ্রুত কারণ বাটন (Chips) */}
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                "ভুয়ো স্ক্রিনশট",
+                "UTR মেলেনি",
+                "টাকার অঙ্ক অমিল",
+                "স্ক্রিনশট অস্পষ্ট",
+              ].map((reason) => (
+                <button
+                  key={reason}
+                  type="button"
+                  onClick={() => setRejectReason(reason)}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-lg border transition ${
+                    rejectReason === reason
+                      ? "bg-rose-50 border-rose-300 text-rose-700"
+                      : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  {reason}
+                </button>
+              ))}
             </div>
 
-            <div className="flex justify-end gap-2 pt-1">
+            <textarea
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="অন্য কোনো কারণ থাকলে লিখুন..."
+              rows={2}
+              className="w-full text-xs p-2 rounded-xl border border-slate-200 outline-none focus:ring-1 focus:ring-rose-500"
+            />
+
+            <div className="flex items-center gap-2 pt-1">
               <button
-                type="button"
-                onClick={onCloseReject}
-                disabled={actionLoading}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg transition"
-              >
-                বাতিল
-              </button>
-              <button
-                type="button"
-                onClick={submitRejectScreenshot}
+                onClick={handleRejectSubmit}
                 disabled={actionLoading || !rejectReason.trim()}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg transition disabled:opacity-50"
+                className="flex-1 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition"
               >
                 {actionLoading ? "প্রসেস হচ্ছে..." : "কনফার্ম রিজেক্ট"}
+              </button>
+              <button
+                onClick={onCloseReject}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                বাতিল
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* --- ৩. ইমেজ জুম / ফুল স্ক্রিন ভিউ --- */}
+      {/* ৩. SCREENSHOT ZOOM MODAL */}
       {zoomedImage && (
         <div
           onClick={onCloseZoom}
           className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 cursor-pointer"
         >
-          <div className="relative max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="relative max-w-sm w-full bg-slate-900 rounded-2xl overflow-hidden p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
             <button
               onClick={onCloseZoom}
-              className="absolute -top-10 right-0 text-white text-sm font-bold bg-white/20 px-3 py-1 rounded-full hover:bg-white/40"
+              className="absolute top-3 right-3 bg-black/60 text-white rounded-full w-7 h-7 flex items-center justify-center text-xs font-bold hover:bg-black"
             >
-              বন্ধ করুন ✕
+              ✕
             </button>
             <img
               src={zoomedImage}
-              alt="Payment Proof Zoom"
-              className="w-full max-h-[80vh] object-contain rounded-xl shadow-2xl bg-black"
+              alt="Payment Proof"
+              className="w-full max-h-[75vh] object-contain rounded-xl"
             />
           </div>
         </div>
       )}
     </>
   );
-}
+            }
 
