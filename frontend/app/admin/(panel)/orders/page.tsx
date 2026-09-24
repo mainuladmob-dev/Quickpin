@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
-import ordercard from "./ordercard";
-import ordermodals from "./ordermodals";
+import Ordercard from "./ordercard";
+import Ordermodals from "./ordermodals";
 import RefundModal from "./RefundModal";
 
 export type OrderItem = {
