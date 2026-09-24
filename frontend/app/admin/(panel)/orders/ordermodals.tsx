@@ -35,12 +35,12 @@ export default function OrderModals({
   const [rejectReason, setRejectReason] = useState("");
 
   // মাস্টার পিকলিস্ট হিসাব
-  const picklistItems = useMemo(() => {
+    const picklistItems = useMemo(() => {
     const map: Record<string, { name: string; qty: number; unit: string; weight: number }> = {};
     orders
-      .filter((o) => o.order_status === "current")
-      .forEach((o) => {
-        (o.items || []).forEach((item) => {
+      ?.filter((o: any) => o.order_status === "current")
+      .forEach((o: any) => {
+        (o.items || []).forEach((item: any) => {
           const name = item.product_name || item.name || "Unknown Product";
           if (!map[name]) {
             map[name] = { name, qty: 0, unit: item.unit || "Unit", weight: 0 };
@@ -52,6 +52,7 @@ export default function OrderModals({
       });
     return Object.values(map);
   }, [orders]);
+  
 
   // স্ক্রিনশট রিজেক্ট করার ব্যাকএন্ড লজিক (সর্বোচ্চ ৩ বারের সুযোগ)
   const submitRejectScreenshot = async () => {
