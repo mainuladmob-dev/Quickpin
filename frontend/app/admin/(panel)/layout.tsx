@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// আপনার দরকারি ৪টি মূল মেনু
+// দৈনন্দিন ব্যবসার জন্য মাত্র ৪টি মূল বাটন
 const MENU_ITEMS = [
   { name: "অর্ডার খাতা (Orders)", href: "/admin/orders", icon: "📦" },
   { name: "পণ্য ও স্টক (Products)", href: "/admin/products", icon: "🛍️" },
@@ -62,7 +62,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="p-4 border-b border-slate-800 flex items-center justify-between">
           <div>
             <h2 className="text-base font-bold text-white tracking-wide">Quickpin</h2>
-            <p className="text-[10px] text-slate-400">সহজ অর্ডার ও স্টক ম্যানেজমেন্ট</p>
+            <p className="text-[10px] text-slate-400">সহজ অর্ডার ও ব্যবসা খাতা</p>
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
@@ -99,7 +99,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </nav>
         </div>
 
-        {/* সাইডবার ফুটার (ডেস্কটপ লগআউট) */}
+        {/* সাইডবার ফুটার (লগআউট) */}
         <div className="p-3 border-t border-slate-800 hidden md:block">
           <button
             onClick={handleLogout}
