@@ -1,126 +1,143 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-// দৈনন্দিন ব্যবসার জন্য মাত্র ৪টি মূল বাটন
-const MENU_ITEMS = [
-  { name: "অর্ডার খাতা (Orders)", href: "/admin/orders", icon: "📦" },
-  { name: "পণ্য ও স্টক (Products)", href: "/admin/products", icon: "🛍️" },
-  { name: "ক্যাটাগরি (Categories)", href: "/admin/categories", icon: "📁" },
-  { name: "দোকান সেটিংস (Settings)", href: "/admin/settings", icon: "⚙️" },
+const MAIN_NAV = [
+  { name: "Orders", href: "/admin/orders", icon: "📦" },
+  { name: "Products", href: "/admin/products", icon: "🛍️" },
+  { name: "Categories", href: "/admin/categories", icon: "📁" },
+  { name: "Settings", href: "/admin/settings", icon: "⚙️" },
 ];
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+const BACKOFFICE_NAV = [
+  { name: "Banners", href: "/admin/banners", icon: "🖼️" },
+  { name: "Customers", href: "/admin/customers", icon: "👥" },
+  { name: "Admins", href: "/admin/admins", icon: "🛡️" },
+  { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "📡" },
+];
+
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const [showBackoffice, setShowBackoffice] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const handleLogout = async () => {
+    if (!confirm("Are you sure you want to log out?")) return;
     await supabase.auth.signOut();
     router.push("/admin/login");
   };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
-      {/* মোবাইল টপবার */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
+      {/* মোবাইলের জন্য টপ হেডার বার */}
+      <header className="bg-white border-b border-slate-200 px-4 py-3 flex items-center justify-between md:hidden sticky top-0 z-40">
         <button
-          onClick={() => setSidebarOpen(true)}
-          className="p-1.5 rounded-lg text-slate-700 hover:bg-slate-100 text-xl"
-          aria-label="Open Menu"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="text-slate-700 font-bold p-1.5 rounded-lg border border-slate-200"
         >
-          ☰
+          {isMobileMenuOpen ? "✕ বন্ধ" : "☰ মেনু"}
         </button>
-        <span className="font-bold text-slate-900 tracking-tight">Quickpin Admin</span>
+        <span className="font-black text-slate-800 text-base">Quickpin Admin</span>
         <button
           onClick={handleLogout}
-          className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 rounded-lg border border-rose-100"
+          className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg"
         >
           Logout
         </button>
       </header>
 
-      {/* মোবাইল ব্যাকড্রপ */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-slate-900/40 z-40 md:hidden backdrop-blur-xs"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* সাইডবার প্যানেল */}
+      {/* সাইডবার মেনু */}
       <aside
-        className={`fixed md:sticky top-0 h-screen w-64 bg-slate-900 text-white flex flex-col z-50 transition-transform duration-200 ease-in-out ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        }`}
+        className={`${
+          isMobileMenuOpen ? "block" : "hidden"
+        } md:block w-full md:w-64 bg-white border-r border-slate-200 shrink-0 p-4 space-y-4`}
       >
-        {/* ব্র্যান্ড লোগো */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-white tracking-wide">Quickpin</h2>
-            <p className="text-[10px] text-slate-400">সহজ অর্ডার ও ব্যবসা খাতা</p>
-          </div>
-          <button
-            onClick={() => setSidebarOpen(false)}
-            className="md:hidden text-slate-400 hover:text-white text-lg p-1"
-          >
-            ✕
-          </button>
-        </div>
-
-        {/* ছিমছাম নেভিগেশন লিস্ট */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 mb-2">
-            মূল মেনু
-          </p>
-          <nav className="space-y-1.5">
-            {MENU_ITEMS.map((item) => {
-              const isActive = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold transition ${
-                    isActive
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-300 hover:bg-slate-800 hover:text-white"
-                  }`}
-                >
-                  <span className="text-base">{item.icon}</span>
-                  <span>{item.name}</span>
-                </Link>
-              );
-            })}
-          </nav>
-        </div>
-
-        {/* সাইডবার ফুটার (লগআউট) */}
-        <div className="p-3 border-t border-slate-800 hidden md:block">
+        <div className="hidden md:flex items-center justify-between pb-3 border-b border-slate-100">
+          <span className="font-black text-slate-900 text-lg">Quickpin Admin</span>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold text-rose-400 bg-rose-950/40 hover:bg-rose-900/50 rounded-xl border border-rose-900/50 transition"
+            className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg hover:bg-rose-100"
           >
-            🚪 Logout
+            Logout
           </button>
+        </div>
+
+        {/* প্রতিদিনের মূল ৪টি বাটন */}
+        <nav className="space-y-1">
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2 mb-1.5">
+            মূল ড্যাশবোর্ড
+          </p>
+          {MAIN_NAV.map((item) => {
+            const isActive = pathname.startsWith(item.href);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setIsMobileMenuOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold text-xs transition ${
+                  isActive
+                    ? "bg-blue-600 text-white shadow-xs"
+                    : "text-slate-700 hover:bg-slate-100"
+                }`}
+              >
+                <span>{item.icon}</span>
+                <span>{item.name}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* ব্যাকঅফিস ও অডিট ড্রপডাউন ফোল্ডার */}
+        <div className="pt-2 border-t border-slate-100">
+          <button
+            onClick={() => setShowBackoffice(!showBackoffice)}
+            className="w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition"
+          >
+            <span className="flex items-center gap-2">
+              <span>📁</span> ব্যাকঅফিস ও অডিট
+            </span>
+            <span className="text-[10px] text-slate-400">
+              {showBackoffice ? "▲" : "▼"}
+            </span>
+          </button>
+
+          {showBackoffice && (
+            <div className="mt-1 pl-3 space-y-1 border-l-2 border-slate-200 ml-3">
+              {BACKOFFICE_NAV.map((item) => {
+                const isActive = pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition ${
+                      isActive
+                        ? "bg-slate-900 text-white font-bold"
+                        : "text-slate-600 hover:bg-slate-100"
+                    }`}
+                  >
+                    <span>{item.icon}</span>
+                    <span>{item.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </aside>
 
-      {/* পেজ কনটেন্ট */}
-      <main className="flex-1 overflow-x-hidden min-h-screen">
-        <Suspense
-          fallback={
-            <div className="p-6 text-xs text-slate-400 flex items-center gap-2">
-              <span className="animate-spin">⏳</span> লোড হচ্ছে...
-            </div>
-          }
-        >
-          {children}
-        </Suspense>
+      {/* পেজের মূল কনটেন্ট */}
+      <main className="flex-1 p-3 md:p-6 overflow-x-hidden">
+        {children}
       </main>
     </div>
   );
