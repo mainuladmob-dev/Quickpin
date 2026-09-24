@@ -421,13 +421,13 @@ export default function AdminOrdersPage() {
       />
 
       {refundingOrder && (
-        <RefundModal
-          order={refundingOrder}
-          onClose={() => setRefundingOrder(null)}
-          onSuccess={fetchOrders}
-        />
-      )}
-    </div>
-  );
-                         }
+  <RefundModal
+    order={refundingOrder}
+    onClose={() => {
+      setRefundingOrder(null);
+      fetchOrders();
+    }}
+  />
+)}
+      
 
