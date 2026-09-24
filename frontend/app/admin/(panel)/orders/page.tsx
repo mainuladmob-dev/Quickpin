@@ -1,72 +1,129 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import OrderCard, { Order } from "./OrderCard";
-import OrderModals from "./OrderModals";
-import RefundModal from "./RefundModal";
+import OrderCard from "@/components/admin/orders/OrderCard";
+import MasterPicklistModal from "@/components/admin/orders/MasterPicklistModal";
+import RefundModal from "@/components/admin/orders/RefundModal";
+
+// Indian Standard Time (IST) onujayi YYYY-MM-DD date ber korar function
+function getISTDateString(dateObj: Date = new Date()) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  return formatter.format(dateObj); // Returns "YYYY-MM-DD"
+}
 
 export default function AdminOrdersPage() {
   const supabase = createClient();
 
-  // লোকাল তারিখ ফরম্যাট (YYYY-MM-DD)
-  const getLocalDateString = (d = new Date()) => {
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+  // 1. Date States (IST Timezone Based)
+  const todayIST = useMemo(() => getISTDateString(new Date()), []);
+  const yesterdayIST = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return getISTDateString(d);
+  }, []);
 
-  const [selectedDate, setSelectedDate] = useState<string>(getLocalDateString());
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string>(todayIST);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [actionLoading, setActionLoading] = useState<boolean>(false);
-  const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>({});
 
-  // ফিল্টার স্ট্যাটাস ও মোড
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [modeFilter, setModeFilter] = useState<string>("all");
+  // 2. Filter States
+  const [activeMode, setActiveMode] = useState<string>("all");
+  const [activeStatus, setActiveStatus] = useState<string>("all");
 
-  // মোডাল হ্যান্ডলিং স্টেট
-  const [showPicklist, setShowPicklist] = useState<boolean>(false);
-  const [rejectingOrder, setRejectingOrder] = useState<Order | null>(null);
-  const [refundingOrder, setRefundingOrder] = useState<Order | null>(null);
-  const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  // 3. Modals
+  const [picklistOpen, setPicklistOpen] = useState<boolean>(false);
+  const [refundModalOrder, setRefundModalOrder] = useState<any | null>(null);
 
-  // ডেটাবেজ থেকে অর্ডার আনা
+  // 4. Safe Order Fetching (No risky join crashes, strict IST timestamp)
   const fetchOrders = useCallback(async () => {
     setLoading(true);
-    try {
-      const startOfDay = `${selectedDate}T00:00:00.000Z`;
-      const endOfDay = `${selectedDate}T23:59:59.999Z`;
 
-      const { data, error } = await supabase
+    try {
+      // Indian Time onujayi din-er shuru (00:00:00+05:30) theke shesh (23:59:59+05:30)
+      const startOfDayIST = `${selectedDate}T00:00:00+05:30`;
+      const endOfDayIST = `${selectedDate}T23:59:59.999+05:30`;
+
+      // Simple direct query jate foreign key-er jonno query fail na kore
+      const { data: rawOrders, error } = await supabase
         .from("orders")
-        .select(`
-          *,
-          profile:profiles(name, phone, email, address),
-          items:order_items(
-            id,
-            product_name,
-            name,
-            quantity,
-            unit_price,
-            price,
-            unit,
-            weight
-          )
-        `)
-        .gte("created_at", startOfDay)
-        .lte("created_at", endOfDay)
+        .select("*")
+        .gte("created_at", startOfDayIST)
+        .lte("created_at", endOfDayIST)
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("অর্ডার ফেচিং এরর:", error);
-      } else {
-        setOrders((data as Order[]) || []);
+        console.error("Orders fetch error:", error);
+        setOrders([]);
+        setLoading(false);
+        return;
       }
+
+      if (!rawOrders || rawOrders.length === 0) {
+        setOrders([]);
+        setLoading(false);
+        return;
+      }
+
+      // Safe Profile & Item Enrichment (Jodi alada table-e thake)
+      const orderIds = rawOrders.map((o) => o.id);
+      const userIds = [...new Set(rawOrders.map((o) => o.user_id).filter(Boolean))];
+
+      // Safe fetch profiles
+      let profilesMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("id, name, phone, email, address")
+          .in("id", userIds);
+        if (profiles) {
+          profiles.forEach((p) => {
+            profilesMap[p.id] = p;
+          });
+        }
+      }
+
+      // Safe fetch order items (jodi orders.items column fanka thake)
+      let itemsMap: Record<string, any[]> = {};
+      const { data: orderItems } = await supabase
+        .from("order_items")
+        .select("*")
+        .in("order_id", orderIds);
+
+      if (orderItems) {
+        orderItems.forEach((item) => {
+          if (!itemsMap[item.order_id]) itemsMap[item.order_id] = [];
+          itemsMap[item.order_id].push(item);
+        });
+      }
+
+      // Shob data eksathe combine kora
+      const finalOrders = rawOrders.map((ord) => {
+        const items =
+          (ord.items && Array.isArray(ord.items) && ord.items.length > 0)
+            ? ord.items
+            : itemsMap[ord.id] || [];
+
+        return {
+          ...ord,
+          profile: profilesMap[ord.user_id] || {
+            name: ord.customer_name || ord.name || "Customer",
+            phone: ord.customer_phone || ord.phone || "N/A",
+            address: ord.delivery_address || ord.address || "",
+          },
+          items,
+        };
+      });
+
+      setOrders(finalOrders);
     } catch (err) {
-      console.error("নেটওয়ার্ক সমস্যা:", err);
+      console.error("Unexpected fetch error:", err);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -76,393 +133,224 @@ export default function AdminOrdersPage() {
     fetchOrders();
   }, [fetchOrders]);
 
-  // স্ট্যাটাস পরিবর্তন
-  const handleStatusChange = async (orderId: string, nextStatus: string) => {
-    setActionLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        order_status: nextStatus,
-        status_changed_at: new Date().toISOString(),
-      })
-      .eq("id", orderId);
+  // 5. Delivery Mode Filtering Logic
+  const filteredByMode = useMemo(() => {
+    if (activeMode === "all") return orders;
 
-    setActionLoading(false);
-    if (error) {
-      alert("স্ট্যাটাস আপডেট করা সম্ভব হয়নি: " + error.message);
-    } else {
-      fetchOrders();
-    }
-  };
+    return orders.filter((o) => {
+      const type = (o.delivery_type || "").toLowerCase();
+      const isHome = type.includes("home");
+      const isSelf = type.includes("pickup") || type.includes("self");
+      const remaining = Number(o.remaining_amount || 0);
 
-  // পেমেন্ট অনুমোদন
-  const handleApprovePayment = async (order: Order) => {
-    setActionLoading(true);
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        payment_status: "paid",
-        paid_amount: order.total_amount,
-        remaining_amount: 0,
-        screenshot_status: "approved",
-        order_status: "current",
-        status_changed_at: new Date().toISOString(),
-      })
-      .eq("id", order.id);
+      if (activeMode === "home_full") return isHome && remaining <= 0;
+      if (activeMode === "home_adv") return isHome && remaining > 0;
+      if (activeMode === "self_full") return isSelf && remaining <= 0;
+      if (activeMode === "self_adv") return isSelf && remaining > 0;
+      return true;
+    });
+  }, [orders, activeMode]);
 
-    setActionLoading(false);
-    if (error) {
-      alert("পেমেন্ট অ্যাপ্রুভ করা যায়নি: " + error.message);
-    } else {
-      fetchOrders();
-    }
-  };
+  // 6. Status Tab Filtering Logic
+  const finalFilteredOrders = useMemo(() => {
+    if (activeStatus === "all") return filteredByMode;
 
-  // রিফান্ড সাবমিট হ্যান্ডলার (RefundModal props এর জন্য)
-  const handleRefundSubmit = async (data: {
-    reason: string;
-    amount: number;
-    method: string;
-    note: string;
-    product_name?: string;
-    transaction_ref?: string;
-    customer_upi?: string;
-  }) => {
-    if (!refundingOrder) return;
-    setActionLoading(true);
-    try {
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: "refund",
-          refund_amount: data.amount,
-          status_changed_at: new Date().toISOString(),
-        })
-        .eq("id", refundingOrder.id);
+    return filteredByMode.filter((o) => {
+      const st = (o.order_status || o.status || "").toLowerCase();
+      if (activeStatus === "pending") return st === "pending";
+      if (activeStatus === "current") return st === "current" || st === "accepted" || st === "processing";
+      if (activeStatus === "out_for_delivery") return st === "out_for_delivery";
+      if (activeStatus === "delivered") return st === "delivered";
+      if (activeStatus === "refund") return st === "refund" || st === "refunded" || Number(o.refund_amount || 0) > 0;
+      if (activeStatus === "spam") return st === "spam" || st === "cancelled";
+      return true;
+    });
+  }, [filteredByMode, activeStatus]);
 
-      if (error) {
-        alert("রিফান্ড সম্পন্ন করা যায়নি: " + error.message);
-      } else {
-        setRefundingOrder(null);
-        fetchOrders();
-      }
-    } catch (err) {
-      console.error("রিফান্ড হ্যান্ডলার এরর:", err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  // ক্যাশ মেমো প্রিন্ট
-  const handlePrintSlip = (order: Order) => {
-    const printWin = window.open("", "_blank");
-    if (!printWin) return;
-    const isPickup = order.delivery_type === "pickup" || order.delivery_type === "self_pickup";
-
-    printWin.document.write(`
-      <html>
-        <head>
-          <title>Cash Memo #${order.order_number}</title>
-          <style>
-            body { font-family: monospace; padding: 20px; font-size: 13px; color: #000; }
-            .header { text-align: center; margin-bottom: 15px; border-bottom: 1px dashed #000; padding-bottom: 10px; }
-            .row { display: flex; justify-content: space-between; margin-bottom: 5px; }
-            .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            .table th, .table td { border-bottom: 1px dashed #ccc; padding: 6px 0; text-align: left; }
-            .table th:last-child, .table td:last-child { text-align: right; }
-            .summary { margin-top: 15px; border-top: 1px dashed #000; padding-top: 8px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h2 style="margin:0;">Quickpin Grocery</h2>
-            <p style="margin:4px 0 0 0;">Order #${order.order_number}</p>
-            <p style="margin:2px 0 0 0;">${new Date(order.created_at).toLocaleString()}</p>
-          </div>
-          <div>
-            <p><strong>Customer:</strong> ${order.profile?.name || "Customer"}</p>
-            <p><strong>Phone:</strong> ${order.profile?.phone || "N/A"}</p>
-            <p><strong>Mode:</strong> ${isPickup ? "Self Pickup" : "Home Delivery"}</p>
-            ${order.delivery_address ? `<p><strong>Address:</strong> ${order.delivery_address}</p>` : ""}
-          </div>
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>Price</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(order.items || [])
-                .map(
-                  (item) => `
-                <tr>
-                  <td>${item.product_name || item.name}</td>
-                  <td>${item.quantity}${item.unit || ""}</td>
-                  <td>₹${Number((item.unit_price || item.price || 0) * item.quantity).toFixed(2)}</td>
-                </tr>
-              `
-                )
-                .join("")}
-            </tbody>
-          </table>
-          <div class="summary">
-            <div class="row"><span>Total Amount:</span><span>₹${Number(order.total_amount).toFixed(2)}</span></div>
-            <div class="row"><span>Paid Amount:</span><span>₹${Number(order.paid_amount || 0).toFixed(2)}</span></div>
-            <div class="row" style="font-weight:bold; font-size:14px; margin-top:4px;">
-              <span>Balance Due:</span><span>₹${Number(order.remaining_amount || 0).toFixed(2)}</span>
-            </div>
-          </div>
-          <script>window.onload = () => { window.print(); window.close(); };</script>
-        </body>
-      </html>
-    `);
-    printWin.document.close();
-  };
-
-  // স্ট্যাটাস অনুযায়ী অর্ডারের সংখ্যা গণনা
-  const counts = useMemo(() => {
-    const map: Record<string, number> = {
-      all: orders.length,
+  // 7. Status Counters for Tabs
+  const statusCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: filteredByMode.length,
+      pending: 0,
       current: 0,
       out_for_delivery: 0,
       delivered: 0,
-      pending: 0,
       refund: 0,
       spam: 0,
     };
-    orders.forEach((o) => {
-      if (map[o.order_status] !== undefined) {
-        map[o.order_status] += 1;
-      }
+
+    filteredByMode.forEach((o) => {
+      const st = (o.order_status || o.status || "").toLowerCase();
+      if (st === "pending") counts.pending++;
+      if (st === "current" || st === "accepted" || st === "processing") counts.current++;
+      if (st === "out_for_delivery") counts.out_for_delivery++;
+      if (st === "delivered") counts.delivered++;
+      if (st === "refund" || st === "refunded" || Number(o.refund_amount || 0) > 0) counts.refund++;
+      if (st === "spam" || st === "cancelled") counts.spam++;
     });
-    return map;
+
+    return counts;
+  }, [filteredByMode]);
+
+  // Current Orders for Master Picklist
+  const currentOrders = useMemo(() => {
+    return orders.filter((o) => {
+      const st = (o.order_status || o.status || "").toLowerCase();
+      return st === "current" || st === "accepted" || st === "processing";
+    });
   }, [orders]);
 
-  // ফিল্টারিং লজিক (৪টি মোড ও ৭টি স্ট্যাটাস)
-  const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
-      // ১. স্ট্যাটাস ফিল্টার
-      if (statusFilter !== "all" && order.order_status !== statusFilter) {
-        return false;
-      }
-
-      // ২. মোড ফিল্টার
-      const isPickup = order.delivery_type === "pickup" || order.delivery_type === "self_pickup";
-      const isAdvance = order.payment_type === "partial" || Number(order.remaining_amount || 0) > 0;
-
-      if (modeFilter === "home_full" && (isPickup || isAdvance)) return false;
-      if (modeFilter === "home_advance" && (isPickup || !isAdvance)) return false;
-      if (modeFilter === "self_full" && (!isPickup || isAdvance)) return false;
-      if (modeFilter === "self_advance" && (!isPickup || !isAdvance)) return false;
-
-      return true;
-    });
-  }, [orders, statusFilter, modeFilter]);
-
   return (
-    <div className="space-y-3">
-      {/* ১. কম্প্যাক্ট ডেট বার ও মাস্টার পিকলিস্ট */}
-      <div className="bg-white p-2.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            className="text-xs font-bold px-2 py-1.5 border border-slate-300 rounded-xl bg-slate-50 outline-none focus:ring-1 focus:ring-blue-500"
-          />
+    <div className="space-y-4 pb-12">
+      {/* 1. Date Selector & Master Picklist Bar */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 bg-slate-50 focus:ring-2 focus:ring-blue-500 outline-none"
+            />
+            <button
+              onClick={() => setSelectedDate(todayIST)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                selectedDate === todayIST
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              }`}
+            >
+              Today
+            </button>
+            <button
+              onClick={() => setSelectedDate(yesterdayIST)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                selectedDate === yesterdayIST
+                  ? "bg-slate-900 text-white"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              }`}
+            >
+              Yesterday
+            </button>
+          </div>
+
           <button
-            onClick={() => setSelectedDate(getLocalDateString())}
-            className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border transition ${
-              selectedDate === getLocalDateString()
-                ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-            }`}
+            onClick={() => setPicklistOpen(true)}
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-xs active:scale-95 transition"
           >
-            Today
-          </button>
-          <button
-            onClick={() => {
-              const y = new Date();
-              y.setDate(y.getDate() - 1);
-              setSelectedDate(getLocalDateString(y));
-            }}
-            className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border transition ${
-              (() => {
-                const y = new Date();
-                y.setDate(y.getDate() - 1);
-                return selectedDate === getLocalDateString(y);
-              })()
-                ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-            }`}
-          >
-            Yesterday
+            <span>📋 Master Picklist</span>
+            <span className="bg-emerald-800 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+              {currentOrders.length}
+            </span>
           </button>
         </div>
 
-        <button
-          onClick={() => setShowPicklist(true)}
-          className="text-xs font-black px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-2xs transition flex items-center gap-1 shrink-0"
-        >
-          📋 Master Picklist ({counts.current || 0})
-        </button>
-      </div>
-
-      {/* ২. ৪টি ডেলিভারি মোড বাটন */}
-      <div className="overflow-x-auto scrollbar-none py-0.5">
-        <div className="flex items-center gap-1.5 min-w-max">
-          <button
-            onClick={() => setModeFilter("all")}
-            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
-              modeFilter === "all"
-                ? "bg-slate-900 text-white border-slate-900"
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-            }`}
-          >
-            All Modes
-          </button>
-          <button
-            onClick={() => setModeFilter("home_full")}
-            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
-              modeFilter === "home_full"
-                ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
-                : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
-            }`}
-          >
-            🏠 Home Full
-          </button>
-          <button
-            onClick={() => setModeFilter("home_advance")}
-            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
-              modeFilter === "home_advance"
-                ? "bg-amber-700 text-white border-amber-700 shadow-xs"
-                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-            }`}
-          >
-            🏠 Home Advance
-          </button>
-          <button
-            onClick={() => setModeFilter("self_full")}
-            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
-              modeFilter === "self_full"
-                ? "bg-blue-700 text-white border-blue-700 shadow-xs"
-                : "bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100"
-            }`}
-          >
-            🏪 Self Full
-          </button>
-          <button
-            onClick={() => setModeFilter("self_advance")}
-            className={`text-[11px] font-bold px-2.5 py-1.5 rounded-xl border shrink-0 transition ${
-              modeFilter === "self_advance"
-                ? "bg-orange-700 text-white border-orange-700 shadow-xs"
-                : "bg-orange-50 text-orange-900 border-orange-200 hover:bg-orange-100"
-            }`}
-          >
-            🏪 Self Advance
-          </button>
-        </div>
-      </div>
-
-      {/* ৩. ৭টি অর্ডার স্ট্যাটাস ফিল্টার বাটন */}
-      <div className="overflow-x-auto scrollbar-none py-0.5">
-        <div className="flex items-center gap-1.5 min-w-max">
+        {/* 2. Delivery Mode Bar (4 Modes) */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none border-t border-slate-100 pt-2.5">
           {[
-            { id: "all", label: "All Orders", count: counts.all },
-            { id: "current", label: "Current Order", count: counts.current },
-            { id: "out_for_delivery", label: "Out for Delivery", count: counts.out_for_delivery },
-            { id: "delivered", label: "Delivered", count: counts.delivered },
-            { id: "pending", label: "Pending Order", count: counts.pending },
-            { id: "refund", label: "Refund", count: counts.refund },
-            { id: "spam", label: "Spam", count: counts.spam },
-          ].map((tab) => {
-            const isActive = statusFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setStatusFilter(tab.id)}
-                className={`text-[11px] font-bold px-3 py-1.5 rounded-xl border shrink-0 transition flex items-center gap-1.5 ${
-                  isActive
-                    ? "bg-slate-900 text-white border-slate-900 shadow-xs"
-                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                }`}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                    isActive
-                      ? "bg-white text-slate-900"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {tab.count}
-                </span>
-              </button>
-            );
-          })}
+            { id: "all", label: "All Modes" },
+            { id: "home_full", label: "🏠 Home Full" },
+            { id: "home_adv", label: "🏠 Home Advance" },
+            { id: "self_full", label: "🏪 Self Full" },
+            { id: "self_adv", label: "🏪 Self Advance" },
+          ].map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => setActiveMode(mode.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+                activeMode === mode.id
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+              }`}
+            >
+              {mode.label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* ৪. অর্ডার কার্ড তালিকা */}
+      {/* 3. Status Tabs (7 Tabs with Dynamic Counts) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+        {[
+          { id: "all", label: "All Orders", count: statusCounts.all },
+          { id: "pending", label: "Pending", count: statusCounts.pending },
+          { id: "current", label: "Current", count: statusCounts.current },
+          { id: "out_for_delivery", label: "Out for Delivery", count: statusCounts.out_for_delivery },
+          { id: "delivered", label: "Delivered", count: statusCounts.delivered },
+          { id: "refund", label: "Refund", count: statusCounts.refund },
+          { id: "spam", label: "Spam", count: statusCounts.spam },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveStatus(tab.id)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
+              activeStatus === tab.id
+                ? "bg-slate-900 text-white shadow-xs"
+                : "bg-white hover:bg-slate-100 text-slate-600 border border-slate-200"
+            }`}
+          >
+            <span>{tab.label}</span>
+            <span
+              className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+                activeStatus === tab.id
+                  ? "bg-slate-800 text-blue-300"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {tab.count}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* 4. Orders List Area */}
       {loading ? (
-        <div className="text-center py-12 text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">
-          অর্ডার লোড হচ্ছে...
+        <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+          <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+          <p className="text-xs font-semibold text-slate-500">Loading orders...</p>
         </div>
-      ) : filteredOrders.length === 0 ? (
-        <div className="text-center py-12 text-xs font-bold text-slate-400 bg-white rounded-2xl border border-slate-200">
-          এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি
+      ) : finalFilteredOrders.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center space-y-1">
+          <p className="text-2xl">📦</p>
+          <p className="text-xs font-bold text-slate-700">এই ফিল্টারে কোনো অর্ডার পাওয়া যায়নি</p>
+          <p className="text-[11px] text-slate-400">
+            তারিখ বা ফিল্টার পরিবর্তন করে চেষ্টা করুন
+          </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filteredOrders.map((order) => (
+        <div className="space-y-3">
+          {finalFilteredOrders.map((order) => (
             <OrderCard
               key={order.id}
               order={order}
-              isExpanded={!!expandedOrders[order.id]}
-              onToggleExpand={() =>
-                setExpandedOrders((prev) => ({
-                  ...prev,
-                  [order.id]: !prev[order.id],
-                }))
-              }
-              actionLoading={actionLoading}
-              imageLoading={false}
-              onStatusChange={handleStatusChange}
-              onApprovePayment={handleApprovePayment}
-              onRejectClick={(ord) => setRejectingOrder(ord)}
-              onViewScreenshot={(url) => setZoomedImage(url || null)}
-              onRefundClick={(ord) => setRefundingOrder(ord)}
-              onPrintSlip={handlePrintSlip}
+              onStatusUpdated={fetchOrders}
+              onOpenRefundModal={(ord) => setRefundModalOrder(ord)}
             />
           ))}
         </div>
       )}
 
-      {/* ৫. মোডালসমূহ */}
-      <OrderModals
-        orders={orders}
-        selectedDate={selectedDate}
-        showPicklist={showPicklist}
-        onClosePicklist={() => setShowPicklist(false)}
-        rejectingOrder={rejectingOrder}
-        onCloseReject={() => setRejectingOrder(null)}
-        actionLoading={actionLoading}
-        setActionLoading={setActionLoading}
-        zoomedImage={zoomedImage}
-        onCloseZoom={() => setZoomedImage(null)}
-        onSuccess={fetchOrders}
-      />
+      {/* 5. Modals */}
+      {picklistOpen && (
+        <MasterPicklistModal
+          isOpen={picklistOpen}
+          orders={currentOrders}
+          selectedDate={selectedDate}
+          onClose={() => setPicklistOpen(false)}
+        />
+      )}
 
-      {refundingOrder && (
+      {refundModalOrder && (
         <RefundModal
-          order={refundingOrder}
-          onClose={() => setRefundingOrder(null)}
-          onSubmit={handleRefundSubmit}
-          saving={actionLoading}
+          isOpen={Boolean(refundModalOrder)}
+          order={refundModalOrder}
+          onClose={() => setRefundModalOrder(null)}
+          onSuccess={() => {
+            setRefundModalOrder(null);
+            fetchOrders();
+          }}
         />
       )}
     </div>
   );
-              }
+            }
