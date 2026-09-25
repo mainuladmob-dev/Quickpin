@@ -1,32 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 export default function AdminLoginPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [checking, setChecking] = useState(true); // new
+  const [checking, setChecking] = useState(true);
 
-  // 🔥 NEW: Already logged in কিনা check করুন
+  // 🔥 Already logged in থাকলে dashboard-এ পাঠান
   useEffect(() => {
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session) {
-        // Already logged in → dashboard-এ পাঠান
-        router.replace("/admin/dashboard");
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (session?.user) {
+        window.location.href = "/admin/dashboard";
         return;
       }
       setChecking(false);
     };
     checkSession();
-  }, [router, supabase]);
+  }, [supabase]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,18 +68,18 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.replace("/admin/dashboard");
+      // ✅ Full reload — cookie sync হবে
+      window.location.href = "/admin/dashboard";
     } catch (err: any) {
       setError(err.message || "Login failed");
       setLoading(false);
     }
   };
 
-  // 🔥 Session check হওয়ার সময় loading দেখান
   if (checking) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
-        <div className="text-white text-lg">Loading...</div>
+        <p className="text-white">Loading...</p>
       </div>
     );
   }
@@ -86,21 +88,24 @@ export default function AdminLoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-blue-600 mb-1">Quickpin</h1>
-          <p className="text-gray-500 text-sm">Admin Panel</p>
+          <div className="text-4xl mb-3">⚡</div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-1">Quickpin Admin</h1>
+          <p className="text-gray-500 text-sm">
+            Sign in to manage live store operations
+          </p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Email
+              Admin Email
             </label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@example.com"
+              placeholder="admin@quickpin.com"
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900"
             />
           </div>
@@ -130,14 +135,10 @@ export default function AdminLoginPage() {
             disabled={loading}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 rounded-xl transition disabled:opacity-50"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Signing in..." : "Sign In to Panel"}
           </button>
         </form>
-
-        <p className="text-center text-xs text-gray-400 mt-6">
-          Only authorized admins can access this panel.
-        </p>
       </div>
     </div>
   );
-}
+            }
