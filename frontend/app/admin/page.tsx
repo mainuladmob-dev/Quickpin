@@ -2,20 +2,25 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function AdminRootPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
-    const check = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+    let cancelled = false;
 
-      // ইউজার লগইন না থাকলে সরাসরি এডমিন লগইন পেজে পাঠানো
-      if (!user) {
+    const check = async () => {
+      // ✅ getSession ব্যবহার করুন — localStorage/cookie থেকে পড়ে
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (cancelled) return;
+
+      if (!session?.user) {
         router.replace("/admin/login");
         return;
       }
@@ -23,10 +28,11 @@ export default function AdminRootPage() {
       const { data: profile } = await supabase
         .from("profiles")
         .select("role")
-        .eq("id", user.id)
+        .eq("id", session.user.id)
         .maybeSingle();
 
-      // যদি রোল এডমিন, সুপার এডমিন বা স্টাফ হয় -> ড্যাশবোর্ডে পাঠানো
+      if (cancelled) return;
+
       if (
         profile &&
         ["admin", "super_admin", "staff"].includes(profile.role)
@@ -35,12 +41,15 @@ export default function AdminRootPage() {
         return;
       }
 
-      // সাধারণ কাস্টমার হলে তাকে লগআউট না করে সুরক্ষিতভাবে হোমপেজে পাঠানো
       router.replace("/home");
     };
 
     check();
-  }, [router]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router, supabase]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
