@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -12,6 +12,21 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [checking, setChecking] = useState(true); // new
+
+  // 🔥 NEW: Already logged in কিনা check করুন
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) {
+        // Already logged in → dashboard-এ পাঠান
+        router.replace("/admin/dashboard");
+        return;
+      }
+      setChecking(false);
+    };
+    checkSession();
+  }, [router, supabase]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,12 +66,21 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.push("/admin/dashboard");
+      router.replace("/admin/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");
       setLoading(false);
     }
   };
+
+  // 🔥 Session check হওয়ার সময় loading দেখান
+  if (checking) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800">
+        <div className="text-white text-lg">Loading...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 to-slate-800 p-4">
