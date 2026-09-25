@@ -18,48 +18,65 @@ export default function AdminPanelLayout({
   const [adminName, setAdminName] = useState("");
   const [adminRole, setAdminRole] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isAuthed, setIsAuthed] = useState(false);
 
-  // লগইন পেজে আছে কি না চেক
   const isLoginPage = pathname === "/admin/login";
 
   useEffect(() => {
-    // লগইন পেজে থাকলে কোনো অথেনটিকেশন চেকের প্রয়োজন নেই
     if (isLoginPage) {
       setLoading(false);
       return;
     }
 
+    let cancelled = false;
+
     const checkAdmin = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      try {
+        // ✅ getSession ব্যবহার করুন — cookie/localStorage থেকে পড়ে
+        const { data: { session } } = await supabase.auth.getSession();
 
-      if (!user) {
-        window.location.href = "/admin/login";
-        return;
+        if (cancelled) return;
+
+        if (!session?.user) {
+          window.location.href = "/admin/login";
+          return;
+        }
+
+        const { data: profile, error } = await supabase
+          .from("profiles")
+          .select("name, role")
+          .eq("id", session.user.id)
+          .single();
+
+        if (cancelled) return;
+
+        if (
+          error ||
+          !profile ||
+          !["admin", "super_admin", "staff"].includes(profile.role)
+        ) {
+          await supabase.auth.signOut();
+          window.location.href = "/admin/login";
+          return;
+        }
+
+        setAdminName(profile.name || session.user.email || "Admin");
+        setAdminRole(profile.role);
+        setIsAuthed(true);
+        setLoading(false);
+      } catch (err) {
+        console.error("Auth check error:", err);
+        if (!cancelled) {
+          window.location.href = "/admin/login";
+        }
       }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("name, role")
-        .eq("id", user.id)
-        .single();
-
-      if (
-        !profile ||
-        !["admin", "super_admin", "staff"].includes(profile.role)
-      ) {
-        await supabase.auth.signOut();
-        window.location.href = "/admin/login";
-        return;
-      }
-
-      setAdminName(profile.name || user.email || "Admin");
-      setAdminRole(profile.role);
-      setLoading(false);
     };
 
     checkAdmin();
+
+    return () => {
+      cancelled = true;
+    };
   }, [isLoginPage, pathname, supabase]);
 
   const handleLogout = async () => {
@@ -81,7 +98,6 @@ export default function AdminPanelLayout({
     { name: "My Profile", href: "/admin/profile", icon: "🔑" },
   ];
 
-  // লগইন পেজ হলে কোনো সাইডবার বা হেডার ছাড়া শুধু ফর্ম দেখাবে
   if (isLoginPage) {
     return <>{children}</>;
   }
@@ -90,6 +106,14 @@ export default function AdminPanelLayout({
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100">
         <p className="text-gray-500 font-medium">Loading admin panel...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthed) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-100">
+        <p className="text-gray-500 font-medium">Redirecting to login...</p>
       </div>
     );
   }
@@ -168,4 +192,4 @@ export default function AdminPanelLayout({
       </div>
     </div>
   );
-        }
+}
