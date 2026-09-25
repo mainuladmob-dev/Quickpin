@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function AdminRootPage() {
@@ -13,7 +12,6 @@ export default function AdminRootPage() {
     let cancelled = false;
 
     const check = async () => {
-      // ✅ getSession ব্যবহার করুন — localStorage/cookie থেকে পড়ে
       const {
         data: { session },
       } = await supabase.auth.getSession();
