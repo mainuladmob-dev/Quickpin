@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -12,7 +12,7 @@ export default function AdminPanelLayout({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [loading, setLoading] = useState(true);
   const [adminName, setAdminName] = useState("");
@@ -32,8 +32,9 @@ export default function AdminPanelLayout({
 
     const checkAdmin = async () => {
       try {
-        // ✅ getSession ব্যবহার করুন — cookie/localStorage থেকে পড়ে
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (cancelled) return;
 
