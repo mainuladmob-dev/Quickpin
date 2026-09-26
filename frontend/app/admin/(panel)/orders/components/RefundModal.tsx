@@ -66,11 +66,13 @@ export default function RefundModal({
 
       // 2. Insert one row per product into refunds table
       const refundRows = selectedProducts.map((item) => ({
-        order_id: order.id, // UUID
+        order_id: order.id,
         product_name: item.products?.name_en || "Product",
         quantity: item.qty,
         amount: item.qty * item.price,
-        weight_kg: null,
+        weight_kg: item.products?.weight
+          ? item.qty * item.products.weight
+          : null,
         refund_method: refundMethod,
         reason: reason.trim() || null,
         customer_upi: upiId || null,
@@ -83,14 +85,14 @@ export default function RefundModal({
 
       if (refundErr) throw refundErr;
 
-      // 3. Update order — set refund_amount + status = "refund"
+      // 3. Update order — only refund_amount (status stays delivered)
       const newRefundTotal = (order.refund_amount || 0) + refundAmount;
       const { error: orderErr } = await supabase
-  .from("orders")
-  .update({
-    refund_amount: newRefundTotal,
-  })
-  .eq("id", order.id);
+        .from("orders")
+        .update({
+          refund_amount: newRefundTotal,
+        })
+        .eq("id", order.id);
 
       if (orderErr) throw orderErr;
 
@@ -273,4 +275,4 @@ export default function RefundModal({
       </div>
     </div>
   );
-}
+                    }
