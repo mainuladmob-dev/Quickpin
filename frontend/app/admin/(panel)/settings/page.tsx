@@ -25,7 +25,7 @@ const SETTING_FIELDS: Record<string, FieldMeta> = {
   website_tagline_en: { label: "Tagline (English)", icon: "📝", type: "text" },
   pickup_address: { label: "Pickup Address", icon: "📍", type: "textarea" },
 
-  // Payment — সব একসাথে
+  // Payment
   upi_id: { label: "UPI ID", icon: "💳", type: "text" },
   upi_qr_image: { label: "UPI QR Code", icon: "📸", type: "image" },
   enable_full_payment: { label: "Full Payment", icon: "💰", type: "toggle" },
@@ -258,13 +258,13 @@ export default function SettingsPage() {
 
     const value = settings[key] || "";
 
-    // Toggle
+    // ============ TOGGLE ============
     if (meta.type === "toggle") {
       const isOn = value === "true" || value === "1";
       return (
         <div
           key={key}
-          className="flex items-center justify-between py-3 border-b border-gray-50 last:border-b-0"
+          className="flex items-center justify-between py-3.5 border-b border-gray-50 last:border-b-0"
         >
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="text-base">{meta.icon}</span>
@@ -272,15 +272,20 @@ export default function SettingsPage() {
               {meta.label}
             </span>
           </div>
+
           <button
             onClick={() => handleChange(key, isOn ? "false" : "true")}
-            className={`relative w-12 h-6 rounded-full transition shrink-0 ${
-              isOn ? "bg-green-500" : "bg-gray-300"
+            className={`relative w-14 h-7 rounded-full transition-colors duration-200 shrink-0 shadow-inner ${
+              isOn ? "bg-blue-600" : "bg-gray-300"
             }`}
+            aria-checked={isOn}
+            role="switch"
           >
             <span
-              className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
-                isOn ? "translate-x-6" : "translate-x-0.5"
+              className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-all duration-200 ${
+                isOn
+                  ? "translate-x-[30px] ring-2 ring-blue-700"
+                  : "translate-x-0.5 ring-2 ring-gray-400"
               }`}
             />
           </button>
@@ -288,7 +293,7 @@ export default function SettingsPage() {
       );
     }
 
-    // Image Upload
+    // ============ IMAGE UPLOAD ============
     if (meta.type === "image") {
       return (
         <div
@@ -348,7 +353,7 @@ export default function SettingsPage() {
       );
     }
 
-    // Textarea
+    // ============ TEXTAREA ============
     if (meta.type === "textarea") {
       return (
         <div
@@ -371,7 +376,7 @@ export default function SettingsPage() {
       );
     }
 
-    // Number / Text
+    // ============ NUMBER / TEXT ============
     const inputType = meta.type === "number" ? "number" : "text";
 
     return (
@@ -437,7 +442,7 @@ export default function SettingsPage() {
                 key={section.title}
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
               >
-                {/* Section Header — Delivery/Cart/System-এর মতো */}
+                {/* Section Header */}
                 <button
                   onClick={() => toggleSection(section.title)}
                   className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition"
