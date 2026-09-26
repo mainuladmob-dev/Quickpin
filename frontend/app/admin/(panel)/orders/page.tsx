@@ -105,13 +105,15 @@ export default function OrdersPage() {
       .order("created_at", { ascending: false });
 
     // ===== Status Filter =====
-    if (orderStatus !== "all") {
+    if (orderStatus === "refund") {
+      // Refund filter → refund_amount > 0
+      query = query.gt("refund_amount", 0);
+    } else if (orderStatus !== "all") {
       query = query.eq("order_status", orderStatus);
     }
 
     // ===== Order Type Filter (split into payment_type + delivery_type) =====
     if (orderType !== "all") {
-      // full_home, full_self, advance_home, advance_self
       const [paymentPart, deliveryPart] = orderType.split("_");
       query = query.eq("payment_type", paymentPart);
       query = query.eq(
@@ -137,7 +139,7 @@ export default function OrdersPage() {
         id: o.id,
         order_number: o.order_number || `#${o.id.slice(0, 8)}`,
         phone: phoneFromAddr,
-        upi_id: o.customer_upi || null, // ← rename customer_upi → upi_id
+        upi_id: o.customer_upi || null,
         payment_status: o.payment_status || "pending",
         order_status: o.order_status || "pending",
         total_amount: Number(o.total_amount) || 0,
@@ -272,7 +274,7 @@ export default function OrdersPage() {
       current: orders.filter((o) => o.order_status === "current").length,
       ofd: orders.filter((o) => o.order_status === "out_for_delivery").length,
       delivered: orders.filter((o) => o.order_status === "delivered").length,
-      refund: orders.filter((o) => o.order_status === "refund").length,
+      refund: orders.filter((o) => (o.refund_amount || 0) > 0).length,
       spam: orders.filter((o) => o.order_status === "spam").length,
     };
   }, [orders]);
@@ -307,11 +309,13 @@ export default function OrdersPage() {
           </span>
           <span className="text-gray-300">•</span>
           <span className="whitespace-nowrap">
-            ⏳ Pending: <strong className="text-amber-600">{stats.pending}</strong>
+            ⏳ Pending:{" "}
+            <strong className="text-amber-600">{stats.pending}</strong>
           </span>
           <span className="text-gray-300">•</span>
           <span className="whitespace-nowrap">
-            🔵 Current: <strong className="text-blue-600">{stats.current}</strong>
+            🔵 Current:{" "}
+            <strong className="text-blue-600">{stats.current}</strong>
           </span>
           <span className="text-gray-300">•</span>
           <span className="whitespace-nowrap">
@@ -319,11 +323,13 @@ export default function OrdersPage() {
           </span>
           <span className="text-gray-300">•</span>
           <span className="whitespace-nowrap">
-            ✅ Delivered: <strong className="text-green-600">{stats.delivered}</strong>
+            ✅ Delivered:{" "}
+            <strong className="text-green-600">{stats.delivered}</strong>
           </span>
           <span className="text-gray-300">•</span>
           <span className="whitespace-nowrap">
-            ↩️ Refund: <strong className="text-yellow-600">{stats.refund}</strong>
+            ↩️ Refund:{" "}
+            <strong className="text-yellow-600">{stats.refund}</strong>
           </span>
         </div>
       )}
@@ -334,7 +340,9 @@ export default function OrdersPage() {
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
-              checked={selectedIds.length === orders.length && orders.length > 0}
+              checked={
+                selectedIds.length === orders.length && orders.length > 0
+              }
               onChange={toggleSelectAll}
               className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
@@ -470,4 +478,4 @@ export default function OrdersPage() {
       )}
     </div>
   );
-  }
+    }
