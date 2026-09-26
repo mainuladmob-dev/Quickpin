@@ -31,14 +31,14 @@ export default function CustomersPage() {
 
       const userIds = profiles.map((p) => p.id);
 
-      // 2. Fetch all orders for these customers
+      // 2. Fetch successful orders only
       const { data: orders, error: orderErr } = await supabase
         .from("orders")
         .select(
-          "id, order_number, user_id, total_amount, order_status, created_at, upi_id"
+          "id, order_number, user_id, total_amount, order_status, payment_status, created_at, customer_upi"
         )
         .in("user_id", userIds)
-        .neq("order_status", "spam")
+        .eq("payment_status", "success")
         .order("created_at", { ascending: false });
 
       if (orderErr) throw orderErr;
@@ -58,19 +58,19 @@ export default function CustomersPage() {
           (o) => o.user_id === profile.id
         );
 
-        // Calculate total spent (only non-spam orders)
         const totalSpent = customerOrders.reduce(
           (sum, o) => sum + (Number(o.total_amount) || 0),
           0
         );
 
-        // Last order date
         const lastOrder = customerOrders[0];
 
-        // Get UPI from most recent order with UPI
-        const upiFromOrder = customerOrders.find((o) => o.upi_id)?.upi_id;
+        // UPI from most recent order
+        const upiFromOrder = customerOrders.find(
+          (o) => o.customer_upi
+        )?.customer_upi;
 
-        // Get address
+        // Address
         const addr = (addresses || []).find((a) => a.user_id === profile.id);
 
         return {
@@ -226,4 +226,4 @@ export default function CustomersPage() {
       )}
     </div>
   );
-            }
+}
