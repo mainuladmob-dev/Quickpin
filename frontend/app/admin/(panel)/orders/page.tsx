@@ -14,6 +14,8 @@ import StatusChangeModal, {
   type OrderStatus,
 } from "./components/StatusChangeModal";
 
+const PAGE_SIZE = 20;
+
 export default function OrdersPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -24,9 +26,15 @@ export default function OrdersPage() {
   const [orderStatus, setOrderStatus] = useState<OrderStatusFilter>("all");
   const [orderType, setOrderType] = useState<OrderTypeFilter>("all");
 
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Data
   const [orders, setOrders] = useState<OrderData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Modals
@@ -61,21 +69,16 @@ export default function OrdersPage() {
       return { start: start.toISOString(), end: end.toISOString() };
     }
 
+    if (dateRange === "all") {
+      return null;
+    }
+
     return null;
   }, [dateRange, customStart, customEnd]);
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    const range = getDateRange();
-
-    if (!range) {
-      setLoading(false);
-      return;
-    }
-
-    let query = supabase
-      .from("orders")
-      .select(
+  const buildQuery = useCallback(
+    (forCount = false) => {
+      let query = supabase.from("orders").select(
         `
         id,
         order_number,
@@ -98,31 +101,97 @@ export default function OrdersPage() {
           price,
           products ( name_en, weight )
         )
-      `
-      )
-      .gte("created_at", range.start)
-      .lte("created_at", range.end)
-      .order("created_at", { ascending: false });
-
-    // ===== Status Filter =====
-    if (orderStatus === "refund") {
-      // Refund filter → refund_amount > 0
-      query = query.gt("refund_amount", 0);
-    } else if (orderStatus !== "all") {
-      query = query.eq("order_status", orderStatus);
-    }
-
-    // ===== Order Type Filter (split into payment_type + delivery_type) =====
-    if (orderType !== "all") {
-      const [paymentPart, deliveryPart] = orderType.split("_");
-      query = query.eq("payment_type", paymentPart);
-      query = query.eq(
-        "delivery_type",
-        deliveryPart === "home" ? "home_delivery" : "self_pickup"
+      `,
+        forCount ? { count: "exact", head: true } : undefined
       );
-    }
 
-    const { data, error } = await query;
+      // ===== Search (exact match only — overrides date filter) =====
+      if (searchQuery.trim()) {
+        query = query.eq("order_number", searchQuery.trim());
+      } else {
+        // ===== Date Filter =====
+        const range = getDateRange();
+        if (range) {
+          query = query
+            .gte("created_at", range.start)
+            .lte("created_at", range.end);
+        }
+        // "all" → no date filter
+      }
+
+      // ===== Status Filter =====
+      if (orderStatus === "refund") {
+        query = query.gt("refund_amount", 0);
+      } else if (orderStatus !== "all") {
+        query = query.eq("order_status", orderStatus);
+      }
+
+      // ===== Order Type Filter =====
+      if (orderType !== "all") {
+        const [paymentPart, deliveryPart] = orderType.split("_");
+        query = query.eq("payment_type", paymentPart);
+        query = query.eq(
+          "delivery_type",
+          deliveryPart === "home" ? "home_delivery" : "self_pickup"
+        );
+      }
+
+      return query;
+    },
+    [supabase, searchQuery, getDateRange, orderStatus, orderType]
+  );
+
+  const transformOrder = (o: any): OrderData => {
+    const addr = o.delivery_address_snapshot || null;
+    const phoneFromAddr = addr?.phone || null;
+
+    return {
+      id: o.id,
+      order_number: o.order_number || `#${o.id.slice(0, 8)}`,
+      phone: phoneFromAddr,
+      upi_id: o.customer_upi || null,
+      payment_status: o.payment_status || "pending",
+      order_status: o.order_status || "pending",
+      total_amount: Number(o.total_amount) || 0,
+      paid_amount: Number(o.paid_amount) || 0,
+      remaining_amount: Number(o.remaining_amount) || 0,
+      refund_amount: Number(o.refund_amount) || 0,
+      delivery_type: o.delivery_type || null,
+      payment_type: o.payment_type || null,
+      payment_screenshot_url: o.payment_screenshot_url || null,
+      created_at: o.created_at,
+      order_items: (o.order_items || []).map((item: any) => ({
+        id: item.id,
+        qty: item.qty,
+        price: Number(item.price),
+        products: item.products
+          ? {
+              name_en: item.products.name_en,
+              weight: item.products.weight,
+            }
+          : null,
+      })),
+      address: addr
+        ? {
+            full_name: addr.full_name || "",
+            phone: addr.phone || "",
+            address_line1: addr.address_line1 || "",
+            address_line2: addr.address_line2 || "",
+            city: addr.city || "",
+            state: addr.state || "",
+            pincode: addr.pincode || "",
+          }
+        : null,
+    };
+  };
+
+  const fetchOrders = useCallback(async () => {
+    setLoading(true);
+    setPage(0);
+
+    const { data, error } = await buildQuery()
+      .order("created_at", { ascending: false })
+      .range(0, PAGE_SIZE - 1);
 
     if (error) {
       console.error("Orders fetch error:", error);
@@ -130,55 +199,37 @@ export default function OrdersPage() {
       return;
     }
 
-    // ===== Transform =====
-    const transformed: OrderData[] = (data || []).map((o: any) => {
-      const addr = o.delivery_address_snapshot || null;
-      const phoneFromAddr = addr?.phone || null;
-
-      return {
-        id: o.id,
-        order_number: o.order_number || `#${o.id.slice(0, 8)}`,
-        phone: phoneFromAddr,
-        upi_id: o.customer_upi || null,
-        payment_status: o.payment_status || "pending",
-        order_status: o.order_status || "pending",
-        total_amount: Number(o.total_amount) || 0,
-        paid_amount: Number(o.paid_amount) || 0,
-        remaining_amount: Number(o.remaining_amount) || 0,
-        refund_amount: Number(o.refund_amount) || 0,
-        delivery_type: o.delivery_type || null,
-        payment_type: o.payment_type || null,
-        payment_screenshot_url: o.payment_screenshot_url || null,
-        created_at: o.created_at,
-        order_items: (o.order_items || []).map((item: any) => ({
-          id: item.id,
-          qty: item.qty,
-          price: Number(item.price),
-          products: item.products
-            ? {
-                name_en: item.products.name_en,
-                weight: item.products.weight,
-              }
-            : null,
-        })),
-        address: addr
-          ? {
-              full_name: addr.full_name || "",
-              phone: addr.phone || "",
-              address_line1: addr.address_line1 || "",
-              address_line2: addr.address_line2 || "",
-              city: addr.city || "",
-              state: addr.state || "",
-              pincode: addr.pincode || "",
-            }
-          : null,
-      };
-    });
-
+    const transformed = (data || []).map(transformOrder);
     setOrders(transformed);
+    setHasMore(transformed.length === PAGE_SIZE);
     setSelectedIds([]);
     setLoading(false);
-  }, [supabase, getDateRange, orderStatus, orderType]);
+  }, [buildQuery]);
+
+  const fetchMoreOrders = async () => {
+    if (loadingMore || !hasMore) return;
+
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const from = nextPage * PAGE_SIZE;
+    const to = from + PAGE_SIZE - 1;
+
+    const { data, error } = await buildQuery()
+      .order("created_at", { ascending: false })
+      .range(from, to);
+
+    if (error) {
+      console.error("Load more error:", error);
+      setLoadingMore(false);
+      return;
+    }
+
+    const transformed = (data || []).map(transformOrder);
+    setOrders((prev) => [...prev, ...transformed]);
+    setHasMore(transformed.length === PAGE_SIZE);
+    setPage(nextPage);
+    setLoadingMore(false);
+  };
 
   useEffect(() => {
     fetchOrders();
@@ -266,7 +317,6 @@ export default function OrdersPage() {
     await fetchOrders();
   };
 
-  // Stats
   const stats = useMemo(() => {
     return {
       total: orders.length,
@@ -279,6 +329,8 @@ export default function OrdersPage() {
     };
   }, [orders]);
 
+  const isSearchActive = searchQuery.trim().length > 0;
+
   return (
     <div className="space-y-4 pb-32">
       {/* Header */}
@@ -287,22 +339,51 @@ export default function OrdersPage() {
         <p className="text-sm text-gray-500 mt-1">Manage all your orders</p>
       </div>
 
-      {/* Filters */}
-      <OrderFilters
-        dateRange={dateRange}
-        setDateRange={setDateRange}
-        customStart={customStart}
-        setCustomStart={setCustomStart}
-        customEnd={customEnd}
-        setCustomEnd={setCustomEnd}
-        orderStatus={orderStatus}
-        setOrderStatus={setOrderStatus}
-        orderType={orderType}
-        setOrderType={setOrderType}
-      />
+      {/* Search Bar */}
+      <div className="bg-white rounded-xl p-2 shadow-sm border border-gray-100">
+        <div className="flex items-center gap-2 px-2">
+          <span className="text-lg">🔍</span>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search exact Order ID..."
+            className="flex-1 py-2 text-sm bg-transparent outline-none text-gray-800 placeholder-gray-400"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="w-6 h-6 rounded-full bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-500 text-xs"
+            >
+              ×
+            </button>
+          )}
+        </div>
+        {isSearchActive && (
+          <p className="text-xs text-amber-600 px-4 pb-2">
+            🔍 Searching exact Order ID — filters disabled
+          </p>
+        )}
+      </div>
+
+      {/* Filters — hidden when search active */}
+      {!isSearchActive && (
+        <OrderFilters
+          dateRange={dateRange}
+          setDateRange={setDateRange}
+          customStart={customStart}
+          setCustomStart={setCustomStart}
+          customEnd={customEnd}
+          setCustomEnd={setCustomEnd}
+          orderStatus={orderStatus}
+          setOrderStatus={setOrderStatus}
+          orderType={orderType}
+          setOrderType={setOrderType}
+        />
+      )}
 
       {/* Stats Summary */}
-      {!loading && orders.length > 0 && (
+      {!loading && orders.length > 0 && !isSearchActive && (
         <div className="flex items-center gap-2 text-xs text-gray-500 bg-white rounded-xl px-4 py-2 border border-gray-100 overflow-x-auto">
           <span className="whitespace-nowrap">
             Total: <strong className="text-gray-800">{stats.total}</strong>
@@ -335,7 +416,7 @@ export default function OrdersPage() {
       )}
 
       {/* Select All Bar */}
-      {!loading && orders.length > 0 && (
+      {!loading && orders.length > 0 && !isSearchActive && (
         <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -365,28 +446,62 @@ export default function OrdersPage() {
         </div>
       ) : orders.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
-          <div className="text-6xl mb-4">📭</div>
+          <div className="text-6xl mb-4">
+            {isSearchActive ? "🔍" : "📭"}
+          </div>
           <h2 className="text-lg font-semibold text-gray-700 mb-1">
-            No orders found
+            {isSearchActive ? "No order found" : "No orders found"}
           </h2>
-          <p className="text-sm text-gray-500">এই filter-এ কোনো order নেই</p>
+          <p className="text-sm text-gray-500">
+            {isSearchActive
+              ? `"${searchQuery}" এর সাথে কোনো order মেলেনি`
+              : "এই filter-এ কোনো order নেই"}
+          </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {orders.map((order) => (
-            <OrderCard
-              key={order.id}
-              order={order}
-              selected={selectedIds.includes(order.id)}
-              onToggleSelect={toggleSelect}
-              onChangeStatus={(o) => setStatusChangeIds([o.id])}
-              onRefund={(o) => setRefundOrder(o)}
-              onPrint={(o) => setPrintOrder(o)}
-              onDelete={handleDelete}
-              onViewScreenshot={(url) => setScreenshotUrl(url)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                selected={selectedIds.includes(order.id)}
+                onToggleSelect={toggleSelect}
+                onChangeStatus={(o) => setStatusChangeIds([o.id])}
+                onRefund={(o) => setRefundOrder(o)}
+                onPrint={(o) => setPrintOrder(o)}
+                onDelete={handleDelete}
+                onViewScreenshot={(url) => setScreenshotUrl(url)}
+              />
+            ))}
+          </div>
+
+          {/* Load More */}
+          {hasMore && !isSearchActive && (
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={fetchMoreOrders}
+                disabled={loadingMore}
+                className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm font-semibold px-6 py-3 rounded-xl transition disabled:opacity-50 shadow-sm"
+              >
+                {loadingMore ? (
+                  <span className="flex items-center gap-2">
+                    <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></span>
+                    Loading...
+                  </span>
+                ) : (
+                  "⬇️ Load More"
+                )}
+              </button>
+            </div>
+          )}
+
+          {!hasMore && orders.length >= PAGE_SIZE && !isSearchActive && (
+            <p className="text-center text-xs text-gray-400 pt-2">
+              — All orders loaded —
+            </p>
+          )}
+        </>
       )}
 
       {/* Bulk Actions Bar */}
@@ -478,4 +593,4 @@ export default function OrdersPage() {
       )}
     </div>
   );
-    }
+     }
