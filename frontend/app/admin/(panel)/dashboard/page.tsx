@@ -7,7 +7,7 @@ import StatsCard from "./components/StatsCard";
 import OrderIdsModal from "./components/OrderIdsModal";
 import WeightBreakdownModal from "./components/WeightBreakdownModal";
 
-type DateRange = "today" | "yesterday" | "custom";
+type DateRange = "today" | "yesterday" | "custom" | "all";
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -72,36 +72,39 @@ export default function DashboardPage() {
       return { start: start.toISOString(), end: end.toISOString() };
     }
 
+    // "all" → no date filter
     return null;
   };
 
   const fetchStats = async () => {
     setLoading(true);
     const range = getDateRange();
-    if (!range) {
-      setLoading(false);
-      return;
+
+    let query = supabase.from("orders").select(
+      `
+      id,
+      order_number,
+      order_status,
+      payment_status,
+      total_amount,
+      refund_amount,
+      created_at,
+      order_items (
+        id,
+        qty,
+        products ( name_en, weight )
+      )
+    `
+    );
+
+    // Apply date filter only if range exists (not "all")
+    if (range) {
+      query = query
+        .gte("created_at", range.start)
+        .lte("created_at", range.end);
     }
 
-    const { data: orders, error } = await supabase
-      .from("orders")
-      .select(
-        `
-        id,
-        order_number,
-        order_status,
-        payment_status,
-        total_amount,
-        refund_amount,
-        order_items (
-          id,
-          qty,
-          products ( name_en, weight )
-        )
-      `
-      )
-      .gte("created_at", range.start)
-      .lte("created_at", range.end);
+    const { data: orders, error } = await query;
 
     if (error || !orders) {
       console.error(error);
@@ -119,7 +122,7 @@ export default function DashboardPage() {
       (o: any) => o.payment_status === "pending"
     );
 
-    // ===== Current Orders = order_status === "current" =====
+    // ===== Current = order_status === "current" =====
     const currentOrders = successful.filter(
       (o: any) => o.order_status === "current"
     );
@@ -134,7 +137,7 @@ export default function DashboardPage() {
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Gross Sales = শুধু Delivered orders =====
+    // ===== Gross Sales = delivered only =====
     const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
@@ -145,7 +148,7 @@ export default function DashboardPage() {
       0
     );
 
-    // ===== Weight = শুধু Current orders এর products =====
+    // ===== Weight = Current orders =====
     const productMap: Record<string, number> = {};
 
     currentOrders.forEach((order: any) => {
@@ -224,7 +227,7 @@ export default function DashboardPage() {
       {/* Financial Row */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          💰 Financial (Completed Orders)
+          💰 Financial {dateRange === "all" ? "(All Time)" : "(Completed Orders)"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <StatsCard
