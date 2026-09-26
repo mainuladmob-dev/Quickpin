@@ -14,10 +14,24 @@ export interface OrderData {
   remaining_amount: number;
   refund_amount: number;
   delivery_type: string | null;
+  payment_type: string | null;
   payment_screenshot_url: string | null;
   created_at: string;
-  order_items?: { id: string; qty: number; price: number; products?: { name_en: string } | null }[];
-  address?: { full_name: string; phone: string; address_line1: string; city: string; state: string; pincode: string } | null;
+  order_items?: {
+    id: string;
+    qty: number;
+    price: number;
+    products?: { name_en: string; weight?: number } | null;
+  }[];
+  address?: {
+    full_name: string;
+    phone: string;
+    address_line1: string;
+    address_line2?: string;
+    city: string;
+    state: string;
+    pincode: string;
+  } | null;
 }
 
 interface OrderCardProps {
@@ -31,15 +45,25 @@ interface OrderCardProps {
   onViewScreenshot: (url: string) => void;
 }
 
-const getOrderTypeLabel = (type: string | null) => {
-  if (!type) return "N/A";
-  const map: Record<string, string> = {
-    full_home: "Full + Home",
-    full_self: "Full + Self",
-    advance_home: "Advance + Home",
-    advance_self: "Advance + Self",
-  };
-  return map[type] || type;
+const getOrderTypeLabel = (
+  paymentType: string | null,
+  deliveryType: string | null
+) => {
+  const payment =
+    paymentType === "full"
+      ? "Full"
+      : paymentType === "advance"
+      ? "Advance"
+      : "";
+  const delivery =
+    deliveryType === "home_delivery"
+      ? "Home"
+      : deliveryType === "self_pickup"
+      ? "Self"
+      : "";
+
+  if (payment && delivery) return `${payment} + ${delivery}`;
+  return payment || delivery || "N/A";
 };
 
 export default function OrderCard({
@@ -87,10 +111,11 @@ export default function OrderCard({
           ? "border-blue-400 ring-2 ring-blue-100"
           : isRefund
           ? "border-yellow-200 bg-yellow-50/30"
+          : isSpam
+          ? "border-red-200 bg-red-50/30"
           : "border-gray-100"
       }`}
     >
-      {/* Header Row */}
       <div className="flex items-start gap-3">
         {/* Checkbox */}
         <input
@@ -101,7 +126,7 @@ export default function OrderCard({
         />
 
         <div className="flex-1 min-w-0">
-          {/* Order ID + Phone */}
+          {/* Order ID + Phone + UPI (all on top) */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <button
               onClick={() => copyToClipboard(order.order_number, "order")}
@@ -130,26 +155,8 @@ export default function OrderCard({
             )}
           </div>
 
-          {/* Payment Info */}
-          {isPending && (
-            <div className="space-y-2 mb-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded">
-                  ❌ Payment Failed
-                </span>
-                {order.payment_screenshot_url && (
-                  <button
-                    onClick={() => onViewScreenshot(order.payment_screenshot_url!)}
-                    className="text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition"
-                  >
-                    📸 View Screenshot
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {(isCurrent || isOFD || isDelivered || isRefund) && order.upi_id && (
+          {/* UPI — whenever it exists */}
+          {order.upi_id && (
             <div className="mb-3">
               <button
                 onClick={() => copyToClipboard(order.upi_id!, "upi")}
@@ -165,6 +172,28 @@ export default function OrderCard({
             </div>
           )}
 
+          {/* Pending → Screenshot */}
+          {isPending && (
+            <div className="mb-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-red-600 bg-red-50 px-2 py-1 rounded">
+                  ❌ Payment Failed
+                </span>
+                {order.payment_screenshot_url && (
+                  <button
+                    onClick={() =>
+                      onViewScreenshot(order.payment_screenshot_url!)
+                    }
+                    className="text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 px-2.5 py-1 rounded transition"
+                  >
+                    📸 View Screenshot
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Refund info */}
           {isRefund && (
             <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg p-2.5">
               <p className="text-xs font-semibold text-yellow-800">
@@ -185,7 +214,9 @@ export default function OrderCard({
               <p className="text-gray-400 mb-0.5">Due</p>
               <p
                 className={`font-bold ${
-                  order.remaining_amount > 0 ? "text-red-600" : "text-green-600"
+                  order.remaining_amount > 0
+                    ? "text-red-600"
+                    : "text-green-600"
                 }`}
               >
                 ₹{order.remaining_amount.toLocaleString("en-IN")}
@@ -194,7 +225,7 @@ export default function OrderCard({
             <div>
               <p className="text-gray-400 mb-0.5">Type</p>
               <p className="font-semibold text-gray-700">
-                {getOrderTypeLabel(order.delivery_type)}
+                {getOrderTypeLabel(order.payment_type, order.delivery_type)}
               </p>
             </div>
           </div>
@@ -304,4 +335,4 @@ export default function OrderCard({
       </div>
     </div>
   );
-    }
+}
