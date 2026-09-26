@@ -86,13 +86,11 @@ export default function RefundModal({
       // 3. Update order — set refund_amount + status = "refund"
       const newRefundTotal = (order.refund_amount || 0) + refundAmount;
       const { error: orderErr } = await supabase
-        .from("orders")
-        .update({
-          refund_amount: newRefundTotal,
-          order_status: "refund",
-          status_changed_at: new Date().toISOString(),
-        })
-        .eq("id", order.id);
+  .from("orders")
+  .update({
+    refund_amount: newRefundTotal,
+  })
+  .eq("id", order.id);
 
       if (orderErr) throw orderErr;
 
