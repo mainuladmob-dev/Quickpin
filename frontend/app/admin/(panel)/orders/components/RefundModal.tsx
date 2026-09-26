@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { OrderData } from "./OrderCard";
 
@@ -18,12 +18,19 @@ export default function RefundModal({
   const supabase = useMemo(() => createClient(), []);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
   const [refundMethod, setRefundMethod] = useState<"upi" | "cash" | null>(null);
+  const [manualUpi, setManualUpi] = useState("");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const items = order.order_items || [];
-  const upiId = order.upi_id;
+
+  // Auto-fill UPI from order if available
+  useEffect(() => {
+    if (order.upi_id) {
+      setManualUpi(order.upi_id);
+    }
+  }, [order.upi_id]);
 
   const toggleItem = (itemId: string) => {
     setSelectedItems((prev) =>
@@ -50,8 +57,8 @@ export default function RefundModal({
       return;
     }
 
-    if (refundMethod === "upi" && !upiId) {
-      setError("এই order-এ UPI ID নেই — Cash refund করুন");
+    if (refundMethod === "upi" && !manualUpi.trim()) {
+      setError("Customer UPI ID লিখুন");
       return;
     }
 
@@ -75,7 +82,7 @@ export default function RefundModal({
           : null,
         refund_method: refundMethod,
         reason: reason.trim() || null,
-        customer_upi: upiId || null,
+        customer_upi: refundMethod === "upi" ? manualUpi.trim() : null,
         refunded_at: new Date().toISOString(),
       }));
 
@@ -182,30 +189,49 @@ export default function RefundModal({
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
               💸 Refund Method
             </p>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setRefundMethod("upi")}
-                disabled={!upiId}
-                className={`p-3 rounded-xl border-2 transition text-left ${
+            <div className="space-y-2">
+              {/* UPI Refund */}
+              <div
+                className={`rounded-xl border-2 transition ${
                   refundMethod === "upi"
                     ? "border-blue-500 bg-blue-50"
-                    : "border-gray-200 bg-white hover:border-blue-300"
-                } ${!upiId ? "opacity-40 cursor-not-allowed" : ""}`}
+                    : "border-gray-200 bg-white"
+                }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-lg">🔗</span>
-                  <span className="text-sm font-semibold text-gray-800">
-                    UPI Refund
-                  </span>
-                </div>
-                <p className="text-xs text-gray-500 truncate">
-                  {upiId || "No UPI available"}
-                </p>
-              </button>
+                <button
+                  onClick={() => setRefundMethod("upi")}
+                  className="w-full p-3 text-left"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">🔗</span>
+                    <span className="text-sm font-semibold text-gray-800">
+                      UPI Refund
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    {order.upi_id
+                      ? `Customer UPI: ${order.upi_id}`
+                      : "Enter UPI ID below"}
+                  </p>
+                </button>
 
+                {refundMethod === "upi" && (
+                  <div className="px-3 pb-3">
+                    <input
+                      type="text"
+                      value={manualUpi}
+                      onChange={(e) => setManualUpi(e.target.value)}
+                      placeholder="customer@upi"
+                      className="w-full px-3 py-2.5 text-sm border-2 border-blue-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none font-mono bg-white"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Cash Refund */}
               <button
                 onClick={() => setRefundMethod("cash")}
-                className={`p-3 rounded-xl border-2 transition text-left ${
+                className={`w-full p-3 rounded-xl border-2 transition text-left ${
                   refundMethod === "cash"
                     ? "border-green-500 bg-green-50"
                     : "border-gray-200 bg-white hover:border-green-300"
@@ -275,4 +301,4 @@ export default function RefundModal({
       </div>
     </div>
   );
-                    }
+}
