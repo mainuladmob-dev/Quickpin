@@ -83,10 +83,23 @@ export default function DashboardPage() {
       return;
     }
 
-    // Fetch all orders in date range
     const { data: orders, error } = await supabase
       .from("orders")
-      .select("id, order_number, order_status, payment_status, total_amount, refund_amount")
+      .select(
+        `
+        id,
+        order_number,
+        order_status,
+        payment_status,
+        total_amount,
+        refund_amount,
+        order_items (
+          id,
+          qty,
+          products ( name_en, weight )
+        )
+      `
+      )
       .gte("created_at", range.start)
       .lte("created_at", range.end);
 
@@ -96,49 +109,87 @@ export default function DashboardPage() {
       return;
     }
 
-    // Calculate stats
+    // ✅ Successful orders = payment_status === "success"
     const successful = orders.filter(
-      (o) => o.payment_status === "paid" || o.payment_status === "success"
+      (o: any) => o.payment_status === "success"
     );
 
-    const pending = successful.filter(
-      (o) => o.order_status === "pending" || o.order_status === "processing"
+    // ✅ Pending = payment_status === "pending"
+    const pending = orders.filter(
+      (o: any) => o.payment_status === "pending"
     );
 
+    // ✅ Delivered = delivered status (refunded orders-ও থাকবে)
     const delivered = successful.filter(
-      (o) => o.order_status === "delivered" || o.order_status === "completed"
+      (o: any) => o.order_status === "delivered"
     );
 
-    const refunded = successful.filter((o) => (o.refund_amount || 0) > 0);
+    // ✅ Refunded = refund_amount > 0 (order_status delivered-ই থাকবে)
+    const refunded = orders.filter(
+      (o: any) => (Number(o.refund_amount) || 0) > 0
+    );
 
-    const grossSales = successful.reduce(
-      (sum, o) => sum + (o.total_amount || 0),
+    // ✅ Gross Sales = সব successful + delivered (refunded সহ)
+    const salesEligible = successful.filter((o: any) =>
+      ["current", "out_for_delivery", "delivered"].includes(o.order_status)
+    );
+
+    const grossSales = salesEligible.reduce(
+      (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
     );
 
-    const refundAmount = successful.reduce(
-      (sum, o) => sum + (o.refund_amount || 0),
+    const refundAmount = refunded.reduce(
+      (sum: number, o: any) => sum + (Number(o.refund_amount) || 0),
+      0
+    );
+
+    // ✅ Weight = qty × product.weight
+    const productMap: Record<string, number> = {};
+
+    salesEligible.forEach((order: any) => {
+      (order.order_items || []).forEach((item: any) => {
+        const productWeight = Number(item.products?.weight) || 0;
+        const itemTotalWeight = (Number(item.qty) || 0) * productWeight;
+        const name = item.products?.name_en || "Unknown";
+
+        if (!productMap[name]) productMap[name] = 0;
+        productMap[name] += itemTotalWeight;
+      });
+    });
+
+    const weightBreakdownList = Object.entries(productMap)
+      .map(([name, weight]) => ({
+        name,
+        weight: Number(weight.toFixed(2)),
+      }))
+      .filter((item) => item.weight > 0)
+      .sort((a, b) => b.weight - a.weight);
+
+    const totalWeight = weightBreakdownList.reduce(
+      (sum, item) => sum + item.weight,
       0
     );
 
     setStats({
-      totalOrders: successful.length,
+      totalOrders: salesEligible.length,
       pendingOrders: pending.length,
       deliveredOrders: delivered.length,
       refundOrders: refunded.length,
       grossSales,
       refundAmount,
       netSales: grossSales - refundAmount,
-      totalWeight: 0, // Will calculate later
+      totalWeight: Number(totalWeight.toFixed(2)),
     });
 
     setOrderIds({
-      total: successful.map((o) => o.order_number || o.id),
-      pending: pending.map((o) => o.order_number || o.id),
-      delivered: delivered.map((o) => o.order_number || o.id),
-      refund: refunded.map((o) => o.order_number || o.id),
+      total: salesEligible.map((o: any) => o.order_number || o.id),
+      pending: pending.map((o: any) => o.order_number || o.id),
+      delivered: delivered.map((o: any) => o.order_number || o.id),
+      refund: refunded.map((o: any) => o.order_number || o.id),
     });
 
+    setWeightBreakdown(weightBreakdownList);
     setLoading(false);
   };
 
@@ -156,9 +207,7 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Overview of your store
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Overview of your store</p>
         </div>
 
         <DateFilter
@@ -188,6 +237,8 @@ export default function DashboardPage() {
             value={`₹${stats.refundAmount.toLocaleString("en-IN")}`}
             icon="↩️"
             color="red"
+            onClick={() => setModalOpen("refund")}
+            clickable
           />
           <StatsCard
             title="Net Sales"
@@ -294,4 +345,4 @@ export default function DashboardPage() {
       )}
     </div>
   );
-                                         }
+            }
