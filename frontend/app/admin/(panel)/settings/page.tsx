@@ -9,7 +9,7 @@ interface Setting {
   updated_at: string;
 }
 
-type FieldType = "text" | "number" | "textarea" | "toggle" | "percent";
+type FieldType = "text" | "number" | "textarea" | "toggle" | "image";
 
 interface FieldMeta {
   label: string;
@@ -27,24 +27,42 @@ const SETTING_FIELDS: Record<string, FieldMeta> = {
 
   // Payment
   upi_id: { label: "UPI ID", icon: "💳", type: "text" },
-  upi_qr_image: { label: "UPI QR Image URL", icon: "📸", type: "text" },
+  upi_qr_image: { label: "UPI QR Code", icon: "📸", type: "image" },
   enable_full_payment: { label: "Full Payment", icon: "💰", type: "toggle" },
-  enable_partial_payment: { label: "Partial Payment", icon: "📊", type: "toggle" },
-  partial_payment_percent: { label: "Default Partial %", icon: "％", type: "percent", hint: "Default partial payment percentage" },
-  partial_min_percent: { label: "Min Partial %", icon: "⬇️", type: "percent" },
-  partial_max_percent: { label: "Max Partial %", icon: "⬆️", type: "percent" },
-  partial_payment_amount: { label: "Min Partial Amount (₹)", icon: "₹", type: "number" },
+  enable_partial_payment: {
+    label: "Advance Payment",
+    icon: "📊",
+    type: "toggle",
+  },
+  partial_payment_amount: {
+    label: "Advance Amount (₹)",
+    icon: "₹",
+    type: "number",
+    hint: "Fixed advance amount",
+  },
 
   // Delivery
-  delivery_charge: { label: "Delivery Charge (₹)", icon: "🚚", type: "number" },
-  enable_home_delivery: { label: "Home Delivery", icon: "🏠", type: "toggle" },
+  delivery_charge: {
+    label: "Delivery Charge (₹)",
+    icon: "🚚",
+    type: "number",
+  },
+  enable_home_delivery: {
+    label: "Home Delivery",
+    icon: "🏠",
+    type: "toggle",
+  },
   enable_self_pickup: { label: "Self Pickup", icon: "🏬", type: "toggle" },
 
   // Cart
   min_cart_units: { label: "Min Cart Units", icon: "🛒", type: "number" },
 
   // System
-  max_screenshot_attempts: { label: "Max Screenshot Attempts", icon: "📸", type: "number" },
+  max_screenshot_attempts: {
+    label: "Max Screenshot Attempts",
+    icon: "📸",
+    type: "number",
+  },
   webhook_secret: { label: "Webhook Secret", icon: "🔐", type: "text" },
 };
 
@@ -58,7 +76,12 @@ const SECTIONS: Section[] = [
   {
     title: "Store Information",
     icon: "🏪",
-    keys: ["website_name", "website_tagline_bn", "website_tagline_en", "pickup_address"],
+    keys: [
+      "website_name",
+      "website_tagline_bn",
+      "website_tagline_en",
+      "pickup_address",
+    ],
   },
   {
     title: "Payment",
@@ -68,9 +91,6 @@ const SECTIONS: Section[] = [
       "upi_qr_image",
       "enable_full_payment",
       "enable_partial_payment",
-      "partial_payment_percent",
-      "partial_min_percent",
-      "partial_max_percent",
       "partial_payment_amount",
     ],
   },
@@ -95,10 +115,16 @@ export default function SettingsPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [settings, setSettings] = useState<Record<string, string>>({});
-  const [originalSettings, setOriginalSettings] = useState<Record<string, string>>({});
+  const [originalSettings, setOriginalSettings] = useState<
+    Record<string, string>
+  >({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
   const [openSections, setOpenSections] = useState<string[]>([
     "Store Information",
     "Payment",
@@ -146,6 +172,49 @@ export default function SettingsPage() {
     );
   };
 
+  const handleImageUpload = async (key: string, file?: File) => {
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setMessage({ type: "error", text: "শুধু image file upload করুন" });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setMessage({ type: "error", text: "File size 5MB এর কম হতে হবে" });
+      return;
+    }
+
+    setUploading(true);
+    setMessage(null);
+
+    try {
+      const ext = file.name.split(".").pop() || "png";
+      const fileName = `${key}-${Date.now()}.${ext}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from("banners")
+        .upload(fileName, file, { upsert: true, cacheControl: "3600" });
+
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase.storage
+        .from("banners")
+        .getPublicUrl(fileName);
+
+      handleChange(key, urlData.publicUrl);
+      setMessage({ type: "success", text: "✅ Image uploaded" });
+    } catch (err: any) {
+      console.error(err);
+      setMessage({
+        type: "error",
+        text: err.message || "Upload failed",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
@@ -162,16 +231,14 @@ export default function SettingsPage() {
       }
 
       for (const key of changedKeys) {
-        const { error } = await supabase
-          .from("settings")
-          .upsert(
-            {
-              key,
-              value: settings[key],
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "key" }
-          );
+        const { error } = await supabase.from("settings").upsert(
+          {
+            key,
+            value: settings[key],
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "key" }
+        );
 
         if (error) throw error;
       }
@@ -236,10 +303,79 @@ export default function SettingsPage() {
       );
     }
 
+    // Image Upload
+    if (meta.type === "image") {
+      return (
+        <div
+          key={key}
+          className="py-3 border-b border-gray-50 last:border-b-0"
+        >
+          <label className="flex items-center gap-2 text-sm font-medium text-gray-800 mb-3">
+            <span>{meta.icon}</span>
+            <span>{meta.label}</span>
+          </label>
+
+          {value ? (
+            <div className="space-y-2">
+              <div className="bg-gray-50 rounded-xl p-3 flex items-center justify-center">
+                <img
+                  src={value}
+                  alt="QR Code"
+                  className="w-40 h-40 object-contain rounded-lg"
+                />
+              </div>
+              <label className="inline-block cursor-pointer">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) =>
+                    handleImageUpload(key, e.target.files?.[0])
+                  }
+                  className="hidden"
+                  disabled={uploading}
+                />
+                <span className="inline-flex items-center gap-2 text-xs bg-blue-50 hover:bg-blue-100 text-blue-600 font-semibold px-3 py-2 rounded-lg transition">
+                  {uploading ? "⏳ Uploading..." : "🔄 Change QR Code"}
+                </span>
+              </label>
+            </div>
+          ) : (
+            <label className="block cursor-pointer">
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) =>
+                  handleImageUpload(key, e.target.files?.[0])
+                }
+                className="hidden"
+                disabled={uploading}
+              />
+              <div className="border-2 border-dashed border-gray-300 hover:border-blue-400 rounded-xl p-6 text-center transition">
+                <p className="text-3xl mb-2">📤</p>
+                <p className="text-sm font-semibold text-gray-700">
+                  {uploading ? "Uploading..." : "Tap to Upload QR Code"}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  PNG, JPG (Max 5MB)
+                </p>
+              </div>
+            </label>
+          )}
+
+          {meta.hint && (
+            <p className="text-xs text-gray-400 mt-2">{meta.hint}</p>
+          )}
+        </div>
+      );
+    }
+
     // Textarea
     if (meta.type === "textarea") {
       return (
-        <div key={key} className="py-3 border-b border-gray-50 last:border-b-0">
+        <div
+          key={key}
+          className="py-3 border-b border-gray-50 last:border-b-0"
+        >
           <label className="flex items-center gap-2 text-sm font-medium text-gray-800 mb-2">
             <span>{meta.icon}</span>
             <span>{meta.label}</span>
@@ -258,9 +394,8 @@ export default function SettingsPage() {
       );
     }
 
-    // Number / Percent / Text
-    const inputType =
-      meta.type === "number" || meta.type === "percent" ? "number" : "text";
+    // Number / Text
+    const inputType = meta.type === "number" ? "number" : "text";
 
     return (
       <div key={key} className="py-3 border-b border-gray-50 last:border-b-0">
@@ -329,7 +464,6 @@ export default function SettingsPage() {
                 key={section.title}
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
               >
-                {/* Section Header */}
                 <button
                   onClick={() => toggleSection(section.title)}
                   className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition"
@@ -350,7 +484,6 @@ export default function SettingsPage() {
                   </span>
                 </button>
 
-                {/* Section Content */}
                 {isOpen && (
                   <div className="px-4 pb-2 border-t border-gray-100">
                     {availableKeys.map((key) => renderField(key))}
@@ -385,4 +518,4 @@ export default function SettingsPage() {
       )}
     </div>
   );
-}
+              }
