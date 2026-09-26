@@ -1,6 +1,6 @@
 "use client";
 
-export type DateRange = "today" | "yesterday" | "custom";
+export type DateRange = "today" | "yesterday" | "custom" | "all";
 
 export type OrderStatusFilter =
   | "all"
@@ -48,7 +48,7 @@ export default function OrderFilters({
     { value: "current", label: "Current" },
     { value: "out_for_delivery", label: "Out for Delivery" },
     { value: "delivered", label: "Delivered" },
-    { value: "refund", label: "Refund" },
+    { value: "refund", label: "↩️ Refunded" },
     { value: "pending", label: "Pending" },
     { value: "spam", label: "Spam" },
   ];
@@ -94,6 +94,16 @@ export default function OrderFilters({
           }`}
         >
           📅 Custom
+        </button>
+        <button
+          onClick={() => setDateRange("all")}
+          className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition ${
+            dateRange === "all"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          🕐 All Time
         </button>
       </div>
 
@@ -161,4 +171,4 @@ export default function OrderFilters({
       </div>
     </div>
   );
-      }
+}
