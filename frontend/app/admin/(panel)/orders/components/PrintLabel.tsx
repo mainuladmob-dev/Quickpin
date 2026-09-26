@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { generateLabelPDF } from "@/lib/label-generator";
 import type { OrderData } from "./OrderCard";
 
 interface PrintLabelProps {
@@ -9,70 +9,28 @@ interface PrintLabelProps {
 }
 
 export default function PrintLabel({ order, onClose }: PrintLabelProps) {
-  const printRef = useRef<HTMLDivElement>(null);
+  const handleDownloadPDF = async () => {
+    try {
+      const labelOrder = {
+        order_number: order.order_number,
+        created_at: order.created_at,
+        total_amount: order.total_amount,
+        delivery_type: order.delivery_type || "home_delivery",
+        delivery_address_snapshot: order.address || null,
+        profiles: order.phone ? { name: null, email: null, phone: order.phone } : null,
+        pickup_point: null,
+        paid_amount: order.paid_amount,
+        payment_type: order.remaining_amount > 0 ? "partial" : "full",
+        partial_payment_amount: order.paid_amount,
+      };
 
-  useEffect(() => {
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "auto";
-    };
-  }, []);
-
-  const getOrderTypeLabel = (type: string | null) => {
-    if (!type) return "N/A";
-    const map: Record<string, string> = {
-      full_home: "Full + Home",
-      full_self: "Full + Self",
-      advance_home: "Advance + Home",
-      advance_self: "Advance + Self",
-    };
-    return map[type] || type;
+      await generateLabelPDF([labelOrder], `label-${order.order_number}.pdf`);
+      onClose();
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("PDF generate করতে সমস্যা হয়েছে");
+    }
   };
-
-  const handlePrint = () => {
-    if (!printRef.current) return;
-    const printWindow = window.open("", "_blank", "width=400,height=600");
-    if (!printWindow) return;
-
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>Print Label - ${order.order_number}</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            .label { width: 100%; max-width: 380px; margin: 0 auto; border: 2px solid #000; padding: 16px; }
-            .header { text-align: center; border-bottom: 2px dashed #000; padding-bottom: 10px; margin-bottom: 12px; }
-            .header h1 { font-size: 20px; letter-spacing: 2px; }
-            .header p { font-size: 11px; color: #666; margin-top: 2px; }
-            .section { margin-bottom: 12px; }
-            .section-title { font-size: 10px; color: #666; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; margin-bottom: 4px; }
-            .order-info { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; }
-            .order-info strong { font-weight: bold; }
-            .products { border-top: 1px dashed #999; padding-top: 8px; margin-top: 8px; }
-            .product-row { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; }
-            .total-row { border-top: 2px solid #000; margin-top: 8px; padding-top: 8px; }
-            .total-row .row { display: flex; justify-content: space-between; font-size: 13px; font-weight: bold; padding: 2px 0; }
-            .address { border-top: 1px dashed #999; padding-top: 8px; margin-top: 8px; font-size: 12px; line-height: 1.5; }
-            .address p { margin: 2px 0; }
-            .footer { text-align: center; font-size: 10px; color: #666; margin-top: 12px; border-top: 1px dashed #999; padding-top: 8px; }
-          </style>
-        </head>
-        <body>
-          ${printRef.current.innerHTML}
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
-  };
-
-  const items = order.order_items || [];
-  const address = order.address;
 
   return (
     <div
@@ -80,16 +38,14 @@ export default function PrintLabel({ order, onClose }: PrintLabelProps) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">🖨️ Print Label</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {order.order_number}
-            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{order.order_number}</p>
           </div>
           <button
             onClick={onClose}
@@ -99,82 +55,36 @@ export default function PrintLabel({ order, onClose }: PrintLabelProps) {
           </button>
         </div>
 
-        {/* Preview */}
-        <div className="flex-1 overflow-y-auto p-5 bg-gray-50">
-          <div
-            ref={printRef}
-            className="bg-white p-4 border-2 border-black max-w-[380px] mx-auto"
-          >
-            {/* Label Header */}
-            <div className="header">
-              <h1>⚡ QUICKPIN</h1>
-              <p>Delivery Label</p>
+        {/* Body */}
+        <div className="p-5 space-y-4">
+          <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
+            <p className="text-sm text-blue-800 font-medium mb-2">
+              📄 PDF Label Ready
+            </p>
+            <p className="text-xs text-blue-600">
+              A4 page-এ ৪টা label থাকবে (2×2 grid)। QR code, address,
+              amount সব থাকবে।
+            </p>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-500">Order</span>
+              <span className="font-medium text-gray-800">
+                {order.order_number}
+              </span>
             </div>
-
-            {/* Order Info */}
-            <div className="section">
-              <div className="order-info">
-                <span>Order ID:</span>
-                <strong>{order.order_number}</strong>
-              </div>
-              <div className="order-info">
-                <span>Phone:</span>
-                <strong>{order.phone || "N/A"}</strong>
-              </div>
-              <div className="order-info">
-                <span>Type:</span>
-                <strong>{getOrderTypeLabel(order.delivery_type)}</strong>
-              </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Amount</span>
+              <span className="font-medium text-gray-800">
+                ₹{order.total_amount.toLocaleString("en-IN")}
+              </span>
             </div>
-
-            {/* Products */}
-            {items.length > 0 && (
-              <div className="products">
-                <div className="section-title">🛍️ Products</div>
-                {items.map((item, idx) => (
-                  <div key={item.id || idx} className="product-row">
-                    <span>
-                      • {item.products?.name_en || "Product"} x {item.qty}
-                    </span>
-                    <span>₹{(item.qty * item.price).toLocaleString("en-IN")}</span>
-                  </div>
-                ))}
-
-                <div className="total-row">
-                  <div className="row">
-                    <span>Total:</span>
-                    <span>₹{order.total_amount.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="row">
-                    <span>Paid:</span>
-                    <span>₹{order.paid_amount.toLocaleString("en-IN")}</span>
-                  </div>
-                  <div className="row">
-                    <span>Due:</span>
-                    <span>₹{order.remaining_amount.toLocaleString("en-IN")}</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Address */}
-            {address && (
-              <div className="address">
-                <div className="section-title">📍 Delivery Address</div>
-                <p>
-                  <strong>{address.full_name}</strong>
-                </p>
-                <p>{address.address_line1}</p>
-                <p>
-                  {address.city}, {address.state} - {address.pincode}
-                </p>
-                <p>📞 {address.phone}</p>
-              </div>
-            )}
-
-            {/* Footer */}
-            <div className="footer">
-              Thank you for shopping with Quickpin ⚡
+            <div className="flex justify-between">
+              <span className="text-gray-500">Type</span>
+              <span className="font-medium text-gray-800 capitalize">
+                {order.delivery_type || "N/A"}
+              </span>
             </div>
           </div>
         </div>
@@ -188,13 +98,13 @@ export default function PrintLabel({ order, onClose }: PrintLabelProps) {
             Cancel
           </button>
           <button
-            onClick={handlePrint}
+            onClick={handleDownloadPDF}
             className="flex-1 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition"
           >
-            🖨️ Print
+            📥 Download PDF
           </button>
         </div>
       </div>
     </div>
   );
-            }
+}
