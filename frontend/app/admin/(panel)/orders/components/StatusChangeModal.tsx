@@ -7,14 +7,11 @@ export type OrderStatus =
   | "current"
   | "out_for_delivery"
   | "delivered"
-  | "refund"
   | "spam";
 
 interface StatusChangeModalProps {
-  /** Single order হলে একটা id, bulk হলে multiple */
   orderIds: string[];
-  /** Current status (single-এর জন্য) */
-  currentStatus?: OrderStatus;
+  currentStatus?: string;
   onClose: () => void;
   onConfirm: (newStatus: OrderStatus) => Promise<void>;
 }
@@ -48,12 +45,6 @@ const statusOptions: {
     label: "Delivered",
     icon: "✅",
     color: "green",
-  },
-  {
-    value: "refund",
-    label: "Refund",
-    icon: "↩️",
-    color: "yellow",
   },
   {
     value: "spam",
@@ -101,27 +92,28 @@ export default function StatusChangeModal({
     const map: Record<string, { selected: string; normal: string }> = {
       amber: {
         selected: "bg-amber-50 border-amber-400 ring-2 ring-amber-100",
-        normal: "bg-white border-gray-200 hover:border-amber-200 hover:bg-amber-50/30",
+        normal:
+          "bg-white border-gray-200 hover:border-amber-200 hover:bg-amber-50/30",
       },
       blue: {
         selected: "bg-blue-50 border-blue-400 ring-2 ring-blue-100",
-        normal: "bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30",
+        normal:
+          "bg-white border-gray-200 hover:border-blue-200 hover:bg-blue-50/30",
       },
       purple: {
         selected: "bg-purple-50 border-purple-400 ring-2 ring-purple-100",
-        normal: "bg-white border-gray-200 hover:border-purple-200 hover:bg-purple-50/30",
+        normal:
+          "bg-white border-gray-200 hover:border-purple-200 hover:bg-purple-50/30",
       },
       green: {
         selected: "bg-green-50 border-green-400 ring-2 ring-green-100",
-        normal: "bg-white border-gray-200 hover:border-green-200 hover:bg-green-50/30",
-      },
-      yellow: {
-        selected: "bg-yellow-50 border-yellow-400 ring-2 ring-yellow-100",
-        normal: "bg-white border-gray-200 hover:border-yellow-200 hover:bg-yellow-50/30",
+        normal:
+          "bg-white border-gray-200 hover:border-green-200 hover:bg-green-50/30",
       },
       red: {
         selected: "bg-red-50 border-red-400 ring-2 ring-red-100",
-        normal: "bg-white border-gray-200 hover:border-red-200 hover:bg-red-50/30",
+        normal:
+          "bg-white border-gray-200 hover:border-red-200 hover:bg-red-50/30",
       },
     };
     return isSelected ? map[color].selected : map[color].normal;
@@ -143,9 +135,7 @@ export default function StatusChangeModal({
               🔄 Change Status
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              {isBulk
-                ? `${orderIds.length} orders selected`
-                : `1 order`}
+              {isBulk ? `${orderIds.length} orders selected` : `1 order`}
             </p>
           </div>
           <button
@@ -185,9 +175,7 @@ export default function StatusChangeModal({
                     Current
                   </span>
                 )}
-                {isSelected && !isCurrent && (
-                  <span className="text-lg">✅</span>
-                )}
+                {isSelected && !isCurrent && <span className="text-lg">✅</span>}
               </button>
             );
           })}
@@ -219,4 +207,4 @@ export default function StatusChangeModal({
       </div>
     </div>
   );
-        }
+}
