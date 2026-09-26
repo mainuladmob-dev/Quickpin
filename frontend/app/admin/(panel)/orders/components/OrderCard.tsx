@@ -92,8 +92,8 @@ export default function OrderCard({
   const isCurrent = order.order_status === "current";
   const isOFD = order.order_status === "out_for_delivery";
   const isDelivered = order.order_status === "delivered";
-  const isRefund = order.order_status === "refund";
   const isSpam = order.order_status === "spam";
+  const hasRefund = (order.refund_amount || 0) > 0;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -109,7 +109,7 @@ export default function OrderCard({
       className={`bg-white rounded-2xl shadow-sm border p-4 transition ${
         selected
           ? "border-blue-400 ring-2 ring-blue-100"
-          : isRefund
+          : hasRefund
           ? "border-yellow-200 bg-yellow-50/30"
           : isSpam
           ? "border-red-200 bg-red-50/30"
@@ -126,7 +126,7 @@ export default function OrderCard({
         />
 
         <div className="flex-1 min-w-0">
-          {/* Order ID + Phone + UPI (all on top) */}
+          {/* Order ID + Phone */}
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <button
               onClick={() => copyToClipboard(order.order_number, "order")}
@@ -155,7 +155,7 @@ export default function OrderCard({
             )}
           </div>
 
-          {/* UPI — whenever it exists */}
+          {/* UPI — whenever exists */}
           {order.upi_id && (
             <div className="mb-3">
               <button
@@ -172,7 +172,7 @@ export default function OrderCard({
             </div>
           )}
 
-          {/* Pending → Screenshot */}
+          {/* Pending — Payment Failed + Screenshot */}
           {isPending && (
             <div className="mb-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -193,8 +193,8 @@ export default function OrderCard({
             </div>
           )}
 
-          {/* Refund info */}
-          {isRefund && (
+          {/* Refund badge — জখন refund_amount > 0 */}
+          {hasRefund && (
             <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg p-2.5">
               <p className="text-xs font-semibold text-yellow-800">
                 ↩️ Refunded: ₹{order.refund_amount.toLocaleString("en-IN")}
@@ -235,7 +235,7 @@ export default function OrderCard({
             📅 {formatDate(order.created_at)}
           </p>
 
-          {/* Action Buttons */}
+          {/* Actions */}
           <div className="flex flex-wrap items-center gap-2">
             {isPending && (
               <>
@@ -290,12 +290,14 @@ export default function OrderCard({
 
             {isDelivered && (
               <>
-                <button
-                  onClick={() => onRefund(order)}
-                  className="text-xs font-semibold bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg transition"
-                >
-                  ↩️ Refund
-                </button>
+                {!hasRefund && (
+                  <button
+                    onClick={() => onRefund(order)}
+                    className="text-xs font-semibold bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg transition"
+                  >
+                    ↩️ Refund
+                  </button>
+                )}
                 <button
                   onClick={() => onPrint(order)}
                   className="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition"
@@ -303,15 +305,6 @@ export default function OrderCard({
                   🖨️ Print
                 </button>
               </>
-            )}
-
-            {isRefund && (
-              <button
-                onClick={() => onPrint(order)}
-                className="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition"
-              >
-                🖨️ Print
-              </button>
             )}
 
             {isSpam && (
