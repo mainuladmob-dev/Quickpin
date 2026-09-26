@@ -17,7 +17,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const [stats, setStats] = useState({
-    totalOrders: 0,
+    currentOrders: 0,
     pendingOrders: 0,
     deliveredOrders: 0,
     refundOrders: 0,
@@ -28,18 +28,18 @@ export default function DashboardPage() {
   });
 
   const [orderIds, setOrderIds] = useState<{
-    total: string[];
+    current: string[];
     pending: string[];
     delivered: string[];
     refund: string[];
-  }>({ total: [], pending: [], delivered: [], refund: [] });
+  }>({ current: [], pending: [], delivered: [], refund: [] });
 
   const [weightBreakdown, setWeightBreakdown] = useState<
     { name: string; weight: number }[]
   >([]);
 
   const [modalOpen, setModalOpen] = useState<
-    null | "total" | "pending" | "delivered" | "refund" | "weight"
+    null | "current" | "pending" | "delivered" | "refund" | "weight"
   >(null);
 
   useEffect(() => {
@@ -109,32 +109,33 @@ export default function DashboardPage() {
       return;
     }
 
-    // ✅ Successful orders = payment_status === "success"
+    // ===== Successful = payment_status === "success" =====
     const successful = orders.filter(
       (o: any) => o.payment_status === "success"
     );
 
-    // ✅ Pending = payment_status === "pending"
+    // ===== Pending = payment_status === "pending" =====
     const pending = orders.filter(
       (o: any) => o.payment_status === "pending"
     );
 
-    // ✅ Delivered = delivered status (refunded orders-ও থাকবে)
+    // ===== Current Orders = order_status === "current" =====
+    const currentOrders = successful.filter(
+      (o: any) => o.order_status === "current"
+    );
+
+    // ===== Delivered = order_status === "delivered" =====
     const delivered = successful.filter(
       (o: any) => o.order_status === "delivered"
     );
 
-    // ✅ Refunded = refund_amount > 0 (order_status delivered-ই থাকবে)
+    // ===== Refunded = refund_amount > 0 =====
     const refunded = orders.filter(
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ✅ Gross Sales = সব successful + delivered (refunded সহ)
-    const salesEligible = successful.filter((o: any) =>
-      ["current", "out_for_delivery", "delivered"].includes(o.order_status)
-    );
-
-    const grossSales = salesEligible.reduce(
+    // ===== Gross Sales = শুধু Delivered orders =====
+    const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
     );
@@ -144,10 +145,10 @@ export default function DashboardPage() {
       0
     );
 
-    // ✅ Weight = qty × product.weight
+    // ===== Weight = শুধু Current orders এর products =====
     const productMap: Record<string, number> = {};
 
-    salesEligible.forEach((order: any) => {
+    currentOrders.forEach((order: any) => {
       (order.order_items || []).forEach((item: any) => {
         const productWeight = Number(item.products?.weight) || 0;
         const itemTotalWeight = (Number(item.qty) || 0) * productWeight;
@@ -172,7 +173,7 @@ export default function DashboardPage() {
     );
 
     setStats({
-      totalOrders: salesEligible.length,
+      currentOrders: currentOrders.length,
       pendingOrders: pending.length,
       deliveredOrders: delivered.length,
       refundOrders: refunded.length,
@@ -183,7 +184,7 @@ export default function DashboardPage() {
     });
 
     setOrderIds({
-      total: salesEligible.map((o: any) => o.order_number || o.id),
+      current: currentOrders.map((o: any) => o.order_number || o.id),
       pending: pending.map((o: any) => o.order_number || o.id),
       delivered: delivered.map((o: any) => o.order_number || o.id),
       refund: refunded.map((o: any) => o.order_number || o.id),
@@ -223,7 +224,7 @@ export default function DashboardPage() {
       {/* Financial Row */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          💰 Financial
+          💰 Financial (Completed Orders)
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <StatsCard
@@ -256,11 +257,11 @@ export default function DashboardPage() {
         </h2>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatsCard
-            title="Total Orders"
-            value={stats.totalOrders}
+            title="Current Orders"
+            value={stats.currentOrders}
             icon="📦"
             color="blue"
-            onClick={() => setModalOpen("total")}
+            onClick={() => setModalOpen("current")}
             clickable
           />
           <StatsCard
@@ -293,7 +294,7 @@ export default function DashboardPage() {
       {/* Weight Row */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          ⚖️ Weight
+          ⚖️ Weight to Buy (Current Orders)
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <StatsCard
@@ -308,10 +309,10 @@ export default function DashboardPage() {
       </div>
 
       {/* Modals */}
-      {modalOpen === "total" && (
+      {modalOpen === "current" && (
         <OrderIdsModal
-          title="Total Orders"
-          orderIds={orderIds.total}
+          title="Current Orders"
+          orderIds={orderIds.current}
           onClose={() => setModalOpen(null)}
         />
       )}
@@ -345,4 +346,4 @@ export default function DashboardPage() {
       )}
     </div>
   );
-            }
+}
