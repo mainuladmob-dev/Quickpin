@@ -80,15 +80,15 @@ export default function OrdersPage() {
         id,
         order_number,
         user_id,
-        phone,
-        upi_id,
+        customer_upi,
         payment_status,
         order_status,
+        payment_type,
+        delivery_type,
         total_amount,
         paid_amount,
         remaining_amount,
         refund_amount,
-        delivery_type,
         payment_screenshot_url,
         created_at,
         delivery_address_snapshot,
@@ -96,7 +96,7 @@ export default function OrdersPage() {
           id,
           qty,
           price,
-          products ( name_en )
+          products ( name_en, weight )
         )
       `
       )
@@ -104,14 +104,20 @@ export default function OrdersPage() {
       .lte("created_at", range.end)
       .order("created_at", { ascending: false });
 
-    // Status filter
+    // ===== Status Filter =====
     if (orderStatus !== "all") {
       query = query.eq("order_status", orderStatus);
     }
 
-    // Order type filter
+    // ===== Order Type Filter (split into payment_type + delivery_type) =====
     if (orderType !== "all") {
-      query = query.eq("delivery_type", orderType);
+      // full_home, full_self, advance_home, advance_self
+      const [paymentPart, deliveryPart] = orderType.split("_");
+      query = query.eq("payment_type", paymentPart);
+      query = query.eq(
+        "delivery_type",
+        deliveryPart === "home" ? "home_delivery" : "self_pickup"
+      );
     }
 
     const { data, error } = await query;
@@ -122,14 +128,16 @@ export default function OrdersPage() {
       return;
     }
 
-    // Transform data
+    // ===== Transform =====
     const transformed: OrderData[] = (data || []).map((o: any) => {
       const addr = o.delivery_address_snapshot || null;
+      const phoneFromAddr = addr?.phone || null;
+
       return {
         id: o.id,
         order_number: o.order_number || `#${o.id.slice(0, 8)}`,
-        phone: o.phone || addr?.phone || null,
-        upi_id: o.upi_id || null,
+        phone: phoneFromAddr,
+        upi_id: o.customer_upi || null, // ← rename customer_upi → upi_id
         payment_status: o.payment_status || "pending",
         order_status: o.order_status || "pending",
         total_amount: Number(o.total_amount) || 0,
@@ -137,6 +145,7 @@ export default function OrdersPage() {
         remaining_amount: Number(o.remaining_amount) || 0,
         refund_amount: Number(o.refund_amount) || 0,
         delivery_type: o.delivery_type || null,
+        payment_type: o.payment_type || null,
         payment_screenshot_url: o.payment_screenshot_url || null,
         created_at: o.created_at,
         order_items: (o.order_items || []).map((item: any) => ({
@@ -144,7 +153,10 @@ export default function OrdersPage() {
           qty: item.qty,
           price: Number(item.price),
           products: item.products
-            ? { name_en: item.products.name_en }
+            ? {
+                name_en: item.products.name_en,
+                weight: item.products.weight,
+              }
             : null,
         })),
         address: addr
@@ -152,6 +164,7 @@ export default function OrdersPage() {
               full_name: addr.full_name || "",
               phone: addr.phone || "",
               address_line1: addr.address_line1 || "",
+              address_line2: addr.address_line2 || "",
               city: addr.city || "",
               state: addr.state || "",
               pincode: addr.pincode || "",
@@ -269,9 +282,7 @@ export default function OrdersPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Manage all your orders
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Manage all your orders</p>
       </div>
 
       {/* Filters */}
@@ -350,9 +361,7 @@ export default function OrdersPage() {
           <h2 className="text-lg font-semibold text-gray-700 mb-1">
             No orders found
           </h2>
-          <p className="text-sm text-gray-500">
-            এই filter-এ কোনো order নেই
-          </p>
+          <p className="text-sm text-gray-500">এই filter-এ কোনো order নেই</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -372,7 +381,7 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* Bulk Actions Bar (fixed bottom) */}
+      {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
           <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
@@ -403,10 +412,7 @@ export default function OrdersPage() {
 
       {/* Modals */}
       {printOrder && (
-        <PrintLabel
-          order={printOrder}
-          onClose={() => setPrintOrder(null)}
-        />
+        <PrintLabel order={printOrder} onClose={() => setPrintOrder(null)} />
       )}
 
       {refundOrder && (
@@ -464,4 +470,4 @@ export default function OrdersPage() {
       )}
     </div>
   );
-          }
+  }
