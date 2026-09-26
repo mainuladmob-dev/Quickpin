@@ -17,11 +17,13 @@ export default function RefundModal({
 }: RefundModalProps) {
   const supabase = useMemo(() => createClient(), []);
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [refundMethod, setRefundMethod] = useState<"upi" | "cash" | null>(null);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const items = order.order_items || [];
+  const upiId = order.upi_id;
 
   const toggleItem = (itemId: string) => {
     setSelectedItems((prev) =>
@@ -43,8 +45,13 @@ export default function RefundModal({
       return;
     }
 
-    if (!reason.trim()) {
-      setError("Refund-এর কারণ লিখুন");
+    if (!refundMethod) {
+      setError("Refund method select করুন (UPI / Cash)");
+      return;
+    }
+
+    if (refundMethod === "upi" && !upiId) {
+      setError("এই order-এ UPI ID নেই — Cash refund করুন");
       return;
     }
 
@@ -52,40 +59,42 @@ export default function RefundModal({
     setError("");
 
     try {
-      const refundedProducts = items
-        .filter((item) => selectedItems.includes(item.id))
-        .map((item) => ({
-          product_id: item.id,
-          name: item.products?.name_en || "Product",
-          qty: item.qty,
-          price: item.price,
-          subtotal: item.qty * item.price,
-        }));
+      // 1. Get selected products
+      const selectedProducts = items.filter((item) =>
+        selectedItems.includes(item.id)
+      );
 
-      // 1. Insert into refunds table
-      const { error: refundError } = await supabase
+      // 2. Insert one row per product into refunds table
+      const refundRows = selectedProducts.map((item) => ({
+        order_id: order.id, // UUID
+        product_name: item.products?.name_en || "Product",
+        quantity: item.qty,
+        amount: item.qty * item.price,
+        weight_kg: null,
+        refund_method: refundMethod,
+        reason: reason.trim() || null,
+        customer_upi: upiId || null,
+        refunded_at: new Date().toISOString(),
+      }));
+
+      const { error: refundErr } = await supabase
         .from("refunds")
-        .insert({
-          order_id: order.id,
-          refund_amount: refundAmount,
-          refunded_products: refundedProducts,
-          reason: reason,
-          refund_date: new Date().toISOString(),
-        });
+        .insert(refundRows);
 
-      if (refundError) throw refundError;
+      if (refundErr) throw refundErr;
 
-      // 2. Update order's refund_amount
+      // 3. Update order — set refund_amount + status = "refund"
       const newRefundTotal = (order.refund_amount || 0) + refundAmount;
-      const { error: orderError } = await supabase
+      const { error: orderErr } = await supabase
         .from("orders")
         .update({
           refund_amount: newRefundTotal,
           order_status: "refund",
+          status_changed_at: new Date().toISOString(),
         })
         .eq("id", order.id);
 
-      if (orderError) throw orderError;
+      if (orderErr) throw orderErr;
 
       onSuccess();
       onClose();
@@ -110,9 +119,7 @@ export default function RefundModal({
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <div>
             <h2 className="text-lg font-bold text-gray-900">↩️ Refund Order</h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              {order.order_number}
-            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{order.order_number}</p>
           </div>
           <button
             onClick={onClose}
@@ -123,11 +130,11 @@ export default function RefundModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4">
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Products */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              🛍️ Select Products to Refund
+              🛍️ Select Products
             </p>
             <div className="space-y-2">
               {items.length === 0 ? (
@@ -170,16 +177,61 @@ export default function RefundModal({
             </div>
           </div>
 
+          {/* Refund Method */}
+          <div>
+            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+              💸 Refund Method
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setRefundMethod("upi")}
+                disabled={!upiId}
+                className={`p-3 rounded-xl border-2 transition text-left ${
+                  refundMethod === "upi"
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 bg-white hover:border-blue-300"
+                } ${!upiId ? "opacity-40 cursor-not-allowed" : ""}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">🔗</span>
+                  <span className="text-sm font-semibold text-gray-800">
+                    UPI Refund
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 truncate">
+                  {upiId || "No UPI available"}
+                </p>
+              </button>
+
+              <button
+                onClick={() => setRefundMethod("cash")}
+                className={`p-3 rounded-xl border-2 transition text-left ${
+                  refundMethod === "cash"
+                    ? "border-green-500 bg-green-50"
+                    : "border-gray-200 bg-white hover:border-green-300"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-lg">💵</span>
+                  <span className="text-sm font-semibold text-gray-800">
+                    Cash Refund
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">Hand delivery</p>
+              </button>
+            </div>
+          </div>
+
           {/* Reason */}
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-              📝 Reason
+              📝 Reason (Optional)
             </p>
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ex: Product damaged, quality issue..."
-              rows={3}
+              placeholder="Ex: Product damaged..."
+              rows={2}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
             />
           </div>
@@ -192,7 +244,7 @@ export default function RefundModal({
           )}
         </div>
 
-        {/* Footer — Total + Actions */}
+        {/* Footer */}
         <div className="p-5 border-t border-gray-100 space-y-3">
           <div className="flex items-center justify-between bg-gray-50 rounded-xl px-4 py-3">
             <span className="text-sm font-medium text-gray-600">
@@ -213,7 +265,7 @@ export default function RefundModal({
             </button>
             <button
               onClick={handleConfirm}
-              disabled={loading || selectedItems.length === 0}
+              disabled={loading || selectedItems.length === 0 || !refundMethod}
               className="flex-1 py-3 text-sm font-semibold text-white bg-red-600 hover:bg-red-700 rounded-xl transition disabled:opacity-50"
             >
               {loading ? "Processing..." : "✅ Confirm Refund"}
@@ -223,4 +275,4 @@ export default function RefundModal({
       </div>
     </div>
   );
-  }
+}
