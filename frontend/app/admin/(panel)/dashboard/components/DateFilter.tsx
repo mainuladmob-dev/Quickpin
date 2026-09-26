@@ -1,6 +1,6 @@
 "use client";
 
-type DateRange = "today" | "yesterday" | "custom";
+type DateRange = "today" | "yesterday" | "custom" | "all";
 
 interface DateFilterProps {
   dateRange: DateRange;
@@ -21,10 +21,10 @@ export default function DateFilter({
 }: DateFilterProps) {
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 bg-white rounded-xl p-1 shadow-sm border border-gray-100 overflow-x-auto">
         <button
           onClick={() => setDateRange("today")}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition ${
             dateRange === "today"
               ? "bg-blue-600 text-white shadow-sm"
               : "text-gray-600 hover:bg-gray-50"
@@ -34,7 +34,7 @@ export default function DateFilter({
         </button>
         <button
           onClick={() => setDateRange("yesterday")}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition ${
             dateRange === "yesterday"
               ? "bg-blue-600 text-white shadow-sm"
               : "text-gray-600 hover:bg-gray-50"
@@ -44,13 +44,23 @@ export default function DateFilter({
         </button>
         <button
           onClick={() => setDateRange("custom")}
-          className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+          className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition ${
             dateRange === "custom"
               ? "bg-blue-600 text-white shadow-sm"
               : "text-gray-600 hover:bg-gray-50"
           }`}
         >
           📅 Custom
+        </button>
+        <button
+          onClick={() => setDateRange("all")}
+          className={`px-4 py-2 text-sm font-medium rounded-lg whitespace-nowrap transition ${
+            dateRange === "all"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:bg-gray-50"
+          }`}
+        >
+          🕐 All Time
         </button>
       </div>
 
@@ -60,18 +70,17 @@ export default function DateFilter({
             type="date"
             value={customStart}
             onChange={(e) => setCustomStart(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
           <span className="text-gray-400 text-sm">to</span>
           <input
             type="date"
             value={customEnd}
             onChange={(e) => setCustomEnd(e.target.value)}
-            className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+            className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
           />
         </div>
       )}
     </div>
   );
 }
- 
