@@ -25,7 +25,7 @@ const SETTING_FIELDS: Record<string, FieldMeta> = {
   website_tagline_en: { label: "Tagline (English)", icon: "📝", type: "text" },
   pickup_address: { label: "Pickup Address", icon: "📍", type: "textarea" },
 
-  // Payment
+  // Payment — সব একসাথে
   upi_id: { label: "UPI ID", icon: "💳", type: "text" },
   upi_qr_image: { label: "UPI QR Code", icon: "📸", type: "image" },
   enable_full_payment: { label: "Full Payment", icon: "💰", type: "toggle" },
@@ -42,16 +42,8 @@ const SETTING_FIELDS: Record<string, FieldMeta> = {
   },
 
   // Delivery
-  delivery_charge: {
-    label: "Delivery Charge (₹)",
-    icon: "🚚",
-    type: "number",
-  },
-  enable_home_delivery: {
-    label: "Home Delivery",
-    icon: "🏠",
-    type: "toggle",
-  },
+  delivery_charge: { label: "Delivery Charge (₹)", icon: "🚚", type: "number" },
+  enable_home_delivery: { label: "Home Delivery", icon: "🏠", type: "toggle" },
   enable_self_pickup: { label: "Self Pickup", icon: "🏬", type: "toggle" },
 
   // Cart
@@ -84,7 +76,7 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Payment",
+    title: "Total Payment",
     icon: "💳",
     keys: [
       "upi_id",
@@ -125,10 +117,9 @@ export default function SettingsPage() {
     type: "success" | "error";
     text: string;
   } | null>(null);
-  const [openSections, setOpenSections] = useState<string[]>([
-    "Store Information",
-    "Payment",
-  ]);
+
+  // Default-এ সব collapsed
+  const [openSections, setOpenSections] = useState<string[]>([]);
 
   const fetchSettings = useCallback(async () => {
     setLoading(true);
@@ -206,10 +197,7 @@ export default function SettingsPage() {
       setMessage({ type: "success", text: "✅ Image uploaded" });
     } catch (err: any) {
       console.error(err);
-      setMessage({
-        type: "error",
-        text: err.message || "Upload failed",
-      });
+      setMessage({ type: "error", text: err.message || "Upload failed" });
     } finally {
       setUploading(false);
     }
@@ -249,10 +237,7 @@ export default function SettingsPage() {
         text: `✅ ${changedKeys.length}টা setting save হয়েছে`,
       });
     } catch (err: any) {
-      setMessage({
-        type: "error",
-        text: err.message || "Save failed",
-      });
+      setMessage({ type: "error", text: err.message || "Save failed" });
     } finally {
       setSaving(false);
     }
@@ -328,9 +313,7 @@ export default function SettingsPage() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) =>
-                    handleImageUpload(key, e.target.files?.[0])
-                  }
+                  onChange={(e) => handleImageUpload(key, e.target.files?.[0])}
                   className="hidden"
                   disabled={uploading}
                 />
@@ -344,9 +327,7 @@ export default function SettingsPage() {
               <input
                 type="file"
                 accept="image/*"
-                onChange={(e) =>
-                  handleImageUpload(key, e.target.files?.[0])
-                }
+                onChange={(e) => handleImageUpload(key, e.target.files?.[0])}
                 className="hidden"
                 disabled={uploading}
               />
@@ -355,9 +336,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-semibold text-gray-700">
                   {uploading ? "Uploading..." : "Tap to Upload QR Code"}
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  PNG, JPG (Max 5MB)
-                </p>
+                <p className="text-xs text-gray-400 mt-1">PNG, JPG (Max 5MB)</p>
               </div>
             </label>
           )}
@@ -387,9 +366,7 @@ export default function SettingsPage() {
             placeholder={meta.label}
             className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none resize-none"
           />
-          {meta.hint && (
-            <p className="text-xs text-gray-400 mt-1">{meta.hint}</p>
-          )}
+          {meta.hint && <p className="text-xs text-gray-400 mt-1">{meta.hint}</p>}
         </div>
       );
     }
@@ -410,9 +387,7 @@ export default function SettingsPage() {
           placeholder={meta.label}
           className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
         />
-        {meta.hint && (
-          <p className="text-xs text-gray-400 mt-1">{meta.hint}</p>
-        )}
+        {meta.hint && <p className="text-xs text-gray-400 mt-1">{meta.hint}</p>}
       </div>
     );
   };
@@ -422,9 +397,7 @@ export default function SettingsPage() {
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Configure your store
-        </p>
+        <p className="text-sm text-gray-500 mt-1">Configure your store</p>
       </div>
 
       {/* Message */}
@@ -464,12 +437,13 @@ export default function SettingsPage() {
                 key={section.title}
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
               >
+                {/* Section Header — Delivery/Cart/System-এর মতো */}
                 <button
                   onClick={() => toggleSection(section.title)}
-                  className="w-full flex items-center justify-between px-4 py-3.5 hover:bg-gray-50 transition"
+                  className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className="text-xl">{section.icon}</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">{section.icon}</span>
                     <span className="text-base font-bold text-gray-900">
                       {section.title}
                     </span>
@@ -479,13 +453,14 @@ export default function SettingsPage() {
                       </span>
                     )}
                   </div>
-                  <span className="text-gray-400 text-sm">
+                  <span className="text-gray-400 text-xl">
                     {isOpen ? "▲" : "▼"}
                   </span>
                 </button>
 
+                {/* Section Content */}
                 {isOpen && (
-                  <div className="px-4 pb-2 border-t border-gray-100">
+                  <div className="px-4 pb-3 border-t border-gray-100">
                     {availableKeys.map((key) => renderField(key))}
                   </div>
                 )}
@@ -518,4 +493,4 @@ export default function SettingsPage() {
       )}
     </div>
   );
-              }
+            }
