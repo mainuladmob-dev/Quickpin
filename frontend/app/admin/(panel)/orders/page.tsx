@@ -612,13 +612,12 @@ export default function OrdersPage() {
               <h3 className="text-sm font-bold text-gray-900">
                 📸 Payment Screenshot
               </h3>
-              <button
-                onClick={() => setScreenshotUrl(null)}
-                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
-           flex items-center justify-center text-gray-500 text-xl"
-              >
-                ×
-              </button>
+             <button
+  onClick={() => setScreenshotUrl(null)}
+  className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+>
+  ×
+</button>
             </div>
             <div className="p-4">
               <img
