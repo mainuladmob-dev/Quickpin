@@ -39,7 +39,6 @@ export default function OrdersPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Bulk Print
-  const [bulkPrintLoading, setBulkPrintLoading] = useState(false);
   const [bulkPrintOrders, setBulkPrintOrders] = useState<OrderData[] | null>(
     null
   );
@@ -106,11 +105,9 @@ export default function OrdersPage() {
       `
     );
 
-    // ===== Search (exact match only — overrides date filter) =====
     if (searchQuery.trim()) {
       query = query.eq("order_number", searchQuery.trim());
     } else {
-      // ===== Date Filter =====
       const range = getDateRange();
       if (range) {
         query = query
@@ -119,14 +116,12 @@ export default function OrdersPage() {
       }
     }
 
-    // ===== Status Filter =====
     if (orderStatus === "refund") {
       query = query.gt("refund_amount", 0);
     } else if (orderStatus !== "all") {
       query = query.eq("order_status", orderStatus);
     }
 
-    // ===== Order Type Filter =====
     if (orderType !== "all") {
       const [paymentPart, deliveryPart] = orderType.split("_");
       query = query.eq("payment_type", paymentPart);
@@ -315,59 +310,33 @@ export default function OrdersPage() {
     await fetchOrders();
   };
 
-  // ✅ Bulk Print Current Orders — ALL current orders (not just selected)
-  const handleBulkPrintCurrent = async () => {
-    setBulkPrintLoading(true);
+  // ✅ Bulk Print Selected Orders
+  const handleBulkPrintSelected = () => {
+    // Get selected orders from current list
+    const selectedOrders = orders.filter((o) =>
+      selectedIds.includes(o.id)
+    );
 
-    try {
-      // Fetch ALL current orders (no date filter, no pagination)
-      const { data, error } = await supabase
-        .from("orders")
-        .select(
-          `
-          id,
-          order_number,
-          user_id,
-          customer_upi,
-          payment_status,
-          order_status,
-          payment_type,
-          delivery_type,
-          total_amount,
-          paid_amount,
-          remaining_amount,
-          refund_amount,
-          payment_screenshot_url,
-          created_at,
-          delivery_address_snapshot,
-          order_items (
-            id,
-            qty,
-            price,
-            products ( name_en, weight )
-          )
-        `
-        )
-        .eq("payment_status", "success")
-        .eq("order_status", "current")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        alert("কোনো current order নেই");
-        setBulkPrintLoading(false);
-        return;
-      }
-
-      const transformed = (data || []).map(transformOrder);
-      setBulkPrintOrders(transformed);
-    } catch (err: any) {
-      console.error("Bulk print fetch error:", err);
-      alert("Current orders load করতে সমস্যা হয়েছে");
-    } finally {
-      setBulkPrintLoading(false);
+    if (selectedOrders.length === 0) {
+      alert("কোনো order select করা হয়নি");
+      return;
     }
+
+    // Filter out pending and spam orders
+    const printableOrders = selectedOrders.filter(
+      (o) =>
+        o.order_status !== "pending" && o.order_status !== "spam"
+    );
+
+    if (printableOrders.length === 0) {
+      alert(
+        "Selected orders-এ Pending বা Spam ছাড়া কোনো print যোগ্য order নেই"
+      );
+      return;
+    }
+
+    // Show modal with selected orders
+    setBulkPrintOrders(printableOrders);
   };
 
   const stats = useMemo(() => {
@@ -391,24 +360,6 @@ export default function OrdersPage() {
         <h1 className="text-2xl font-bold text-gray-900">Orders</h1>
         <p className="text-sm text-gray-500 mt-1">Manage all your orders</p>
       </div>
-
-      {/* Bulk Print Current Orders Button */}
-      <button
-        onClick={handleBulkPrintCurrent}
-        disabled={bulkPrintLoading}
-        className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-semibold py-3.5 rounded-xl transition shadow-sm disabled:opacity-50 flex items-center justify-center gap-2"
-      >
-        {bulkPrintLoading ? (
-          <>
-            <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></span>
-            Loading Current Orders...
-          </>
-        ) : (
-          <>
-            🖨️ Bulk Print — All Current Orders
-          </>
-        )}
-      </button>
 
       {/* Search Bar */}
       <div className="bg-white rounded-xl p-2 shadow-sm border border-gray-100">
@@ -582,6 +533,15 @@ export default function OrdersPage() {
             <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
               {selectedIds.length} selected:
             </span>
+
+            {/* ✅ NEW: Bulk Print Button */}
+            <button
+              onClick={handleBulkPrintSelected}
+              className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg whitespace-nowrap transition"
+            >
+              🖨️ Print
+            </button>
+
             <button
               onClick={() => setStatusChangeIds(selectedIds)}
               className="text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg whitespace-nowrap transition"
@@ -619,7 +579,7 @@ export default function OrdersPage() {
       {refundOrder && (
         <RefundModal
           order={refundOrder}
-                  onClose={() => setRefundOrder(null)}
+          onClose={() => setRefundOrder(null)}
           onSuccess={fetchOrders}
         />
       )}
@@ -655,6 +615,7 @@ export default function OrdersPage() {
               <button
                 onClick={() => setScreenshotUrl(null)}
                 className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+           flex items-center justify-center text-gray-500 text-xl"
               >
                 ×
               </button>
