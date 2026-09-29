@@ -19,7 +19,7 @@ interface Product {
   is_active: boolean;
   category_id: string | null;
   images: string[] | null;
-  categories?: { name_en: string } | null;
+  categories?: { name_en: string }[] | null;
 }
 
 export default function ProductsPage() {
@@ -62,7 +62,7 @@ export default function ProductsPage() {
     if (error) {
       console.error(error);
     } else {
-      setProducts((data as Product[]) || []);
+      setProducts((data as unknown as Product[]) || []);
     }
     setLoading(false);
   }, [supabase]);
@@ -346,9 +346,9 @@ export default function ProductsPage() {
                     Stock: {product.stock}
                   </span>
                 </div>
-                {product.categories?.name_en && (
+                {product.categories?.[0]?.name_en && (
                   <span className="inline-block mt-1.5 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                    📂 {product.categories.name_en}
+                    📂 {product.categories[0].name_en}
                   </span>
                 )}
               </div>
@@ -406,15 +406,15 @@ export default function ProductsPage() {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Category Dropdown — NEW */}
+              {/* Category Dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   📂 Category *
                 </label>
                 {categories.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2.5 rounded-xl">
-                    ⚠️ কোনো category নেই। আগে Categories page-এ category add
-                    করুন।
+                    ⚠️ কোনো category নেই। আগে Categories page-এ category
+                    add করুন।
                   </div>
                 ) : (
                   <select
@@ -556,4 +556,4 @@ export default function ProductsPage() {
       )}
     </div>
   );
-}
+                  }
