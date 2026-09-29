@@ -3,6 +3,12 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
+interface Category {
+  id: string;
+  name_en: string;
+  name_bn: string;
+}
+
 interface Product {
   id: string;
   name_en: string;
@@ -20,11 +26,12 @@ export default function ProductsPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterActive, setFilterActive] = useState<"all" | "active" | "inactive">(
-    "all"
-  );
+  const [filterActive, setFilterActive] = useState<
+    "all" | "active" | "inactive"
+  >("all");
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
@@ -37,6 +44,7 @@ export default function ProductsPage() {
     weight: "",
     stock: "",
     is_active: true,
+    category_id: "",
   });
 
   const [saving, setSaving] = useState(false);
@@ -46,7 +54,9 @@ export default function ProductsPage() {
     setLoading(true);
     const { data, error } = await supabase
       .from("products")
-      .select("id, name_en, name_bn, price, weight, stock, is_active, category_id, images")
+      .select(
+        "id, name_en, name_bn, price, weight, stock, is_active, category_id, images, categories(name_en)"
+      )
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -57,9 +67,24 @@ export default function ProductsPage() {
     setLoading(false);
   }, [supabase]);
 
+  const fetchCategories = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("id, name_en, name_bn")
+      .eq("is_active", true)
+      .order("name_en", { ascending: true });
+
+    if (error) {
+      console.error("Categories fetch error:", error);
+    } else {
+      setCategories((data as Category[]) || []);
+    }
+  }, [supabase]);
+
   useEffect(() => {
     fetchProducts();
-  }, [fetchProducts]);
+    fetchCategories();
+  }, [fetchProducts, fetchCategories]);
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -70,6 +95,7 @@ export default function ProductsPage() {
       weight: "",
       stock: "",
       is_active: true,
+      category_id: "",
     });
     setError("");
     setShowModal(true);
@@ -84,6 +110,7 @@ export default function ProductsPage() {
       weight: String(product.weight || ""),
       stock: String(product.stock || ""),
       is_active: product.is_active,
+      category_id: product.category_id || "",
     });
     setError("");
     setShowModal(true);
@@ -102,6 +129,10 @@ export default function ProductsPage() {
       setError("Valid price required");
       return;
     }
+    if (!formData.category_id) {
+      setError("Category select করুন");
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -113,6 +144,7 @@ export default function ProductsPage() {
       weight: Number(formData.weight) || 0,
       stock: Number(formData.stock) || 0,
       is_active: formData.is_active,
+      category_id: formData.category_id,
     };
 
     try {
@@ -293,7 +325,7 @@ export default function ProductsPage() {
                 <p className="text-xs text-gray-500 truncate">
                   {product.name_bn}
                 </p>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-sm font-bold text-blue-600">
                     ₹{product.price}
                   </span>
@@ -314,6 +346,11 @@ export default function ProductsPage() {
                     Stock: {product.stock}
                   </span>
                 </div>
+                {product.categories?.name_en && (
+                  <span className="inline-block mt-1.5 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                    📂 {product.categories.name_en}
+                  </span>
+                )}
               </div>
 
               {/* Actions */}
@@ -369,6 +406,37 @@ export default function ProductsPage() {
             </div>
 
             <div className="p-5 space-y-4">
+              {/* Category Dropdown — NEW */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  📂 Category *
+                </label>
+                {categories.length === 0 ? (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2.5 rounded-xl">
+                    ⚠️ কোনো category নেই। আগে Categories page-এ category add
+                    করুন।
+                  </div>
+                ) : (
+                  <select
+                    value={formData.category_id}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        category_id: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                  >
+                    <option value="">-- Select Category --</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name_en} ({cat.name_bn})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   English Name *
@@ -477,7 +545,7 @@ export default function ProductsPage() {
               </button>
               <button
                 onClick={handleSave}
-                disabled={saving}
+                disabled={saving || categories.length === 0}
                 className="flex-1 py-3 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition disabled:opacity-50"
               >
                 {saving ? "Saving..." : "✅ Save"}
@@ -488,4 +556,4 @@ export default function ProductsPage() {
       )}
     </div>
   );
-  }
+}
