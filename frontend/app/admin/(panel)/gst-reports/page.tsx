@@ -2,11 +2,15 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import SummaryCards from "./components/SummaryCards";
 import HSNTable from "./components/HSNTable";
-import DeliverySection from "./components/DeliverySection";
 
-type DateRange = "today" | "yesterday" | "this_month" | "last_month" | "custom" | "all";
+type DateRange =
+  | "today"
+  | "yesterday"
+  | "this_month"
+  | "last_month"
+  | "custom"
+  | "all";
 
 interface HSNItem {
   hsn_code: string;
@@ -25,22 +29,9 @@ export default function GSTReportsPage() {
   const [customEnd, setCustomEnd] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const [summary, setSummary] = useState({
-    grossSales: 0,
-    refundAmount: 0,
-    netSales: 0,
-    productGST: 0,
-    deliveryGST: 0,
-    totalGST: 0,
-  });
-
+  const [netSales, setNetSales] = useState(0);
+  const [totalGST, setTotalGST] = useState(0);
   const [hsnItems, setHsnItems] = useState<HSNItem[]>([]);
-  const [deliveryData, setDeliveryData] = useState({
-    homeDeliveries: 0,
-    selfPickups: 0,
-    deliveryCharge: 0,
-    deliveryGST: 0,
-  });
 
   const getDateRange = useCallback(() => {
     const today = new Date();
@@ -89,18 +80,14 @@ export default function GSTReportsPage() {
     setLoading(true);
     const range = getDateRange();
 
-    let query = supabase
-      .from("orders")
-      .select(
-        `
+    let query = supabase.from("orders").select(
+      `
         id,
-        order_number,
         order_status,
         payment_status,
         total_amount,
         refund_amount,
         delivery_charge,
-        delivery_type,
         order_items (
           id,
           qty,
@@ -108,7 +95,7 @@ export default function GSTReportsPage() {
           products ( name_en, gst_percentage, hsn_code )
         )
       `
-      );
+    );
 
     if (range) {
       query = query
@@ -144,15 +131,9 @@ export default function GSTReportsPage() {
       (d: any) => !refunded.some((r: any) => r.id === d.id)
     );
 
-    // ===== Gross Sales =====
-    const grossSales = delivered.reduce(
+    // ===== Net Sales =====
+    const netSalesTotal = netDelivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
-      0
-    );
-
-    // ===== Refund Amount =====
-    const refundAmount = refunded.reduce(
-      (sum: number, o: any) => sum + (Number(o.refund_amount) || 0),
       0
     );
 
@@ -195,17 +176,15 @@ export default function GSTReportsPage() {
       a.hsn_code.localeCompare(b.hsn_code)
     );
 
+    // ===== Product GST =====
     const productGSTTotal = hsnList.reduce(
       (sum, item) => sum + item.gst_amount,
       0
     );
 
-    // ===== Delivery Calculation =====
+    // ===== Delivery GST =====
     const homeDelivered = netDelivered.filter(
       (o: any) => o.delivery_type === "home_delivery"
-    );
-    const selfPickups = netDelivered.filter(
-      (o: any) => o.delivery_type === "self_pickup"
     );
 
     const deliveryCharge = homeDelivered.reduce(
@@ -216,23 +195,9 @@ export default function GSTReportsPage() {
     const deliveryGST = deliveryCharge * 0.18;
 
     // ===== Set State =====
-    setSummary({
-      grossSales,
-      refundAmount,
-      netSales: grossSales - refundAmount,
-      productGST: productGSTTotal,
-      deliveryGST,
-      totalGST: productGSTTotal + deliveryGST,
-    });
-
+    setNetSales(netSalesTotal);
+    setTotalGST(productGSTTotal + deliveryGST);
     setHsnItems(hsnList);
-
-    setDeliveryData({
-      homeDeliveries: homeDelivered.length,
-      selfPickups: selfPickups.length,
-      deliveryCharge,
-      deliveryGST,
-    });
 
     setLoading(false);
   }, [supabase, getDateRange]);
@@ -247,7 +212,6 @@ export default function GSTReportsPage() {
       return;
     }
 
-    // CSV Header
     const headers = [
       "HSN Code",
       "Product",
@@ -257,7 +221,6 @@ export default function GSTReportsPage() {
       "GST Amount",
     ];
 
-    // CSV Rows
     const rows = hsnItems.map((item) => [
       item.hsn_code,
       `"${item.product_name}"`,
@@ -267,16 +230,18 @@ export default function GSTReportsPage() {
       item.gst_amount.toFixed(2),
     ]);
 
-    // Total Row
     const totalNetSales = hsnItems.reduce((sum, i) => sum + i.net_sales, 0);
-    const totalGST = hsnItems.reduce((sum, i) => sum + i.gst_amount, 0);
+    const totalGSTAmount = hsnItems.reduce(
+      (sum, i) => sum + i.gst_amount,
+      0
+    );
     rows.push([
       "TOTAL",
       "",
       "",
       "",
       totalNetSales.toFixed(2),
-      totalGST.toFixed(2),
+      totalGSTAmount.toFixed(2),
     ]);
 
     const csvContent = [
@@ -284,97 +249,58 @@ export default function GSTReportsPage() {
       ...rows.map((r) => r.join(",")),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const blob = new Blob([csvContent], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `gst-report-${new Date().toISOString().split("T")[0]}.csv`;
+    link.download = `gst-report-${new Date()
+      .toISOString()
+      .split("T")[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="space-y-4 pb-20">
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">GST Reports</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Monthly summary for GSTR-1 filing
+          Product-wise GST summary for filing
         </p>
       </div>
 
       {/* Period Filter */}
-      <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-3">
-        <div>
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-            📅 Period
-          </p>
-          <div className="flex items-center gap-1 bg-gray-50 rounded-xl p-1 overflow-x-auto">
+      <div className="bg-white rounded-2xl border border-gray-100 p-3">
+        <div className="flex items-center gap-1 overflow-x-auto">
+          {(
+            [
+              { value: "today", label: "Today" },
+              { value: "yesterday", label: "Yesterday" },
+              { value: "this_month", label: "This Month" },
+              { value: "last_month", label: "Last Month" },
+              { value: "custom", label: "📅 Custom" },
+              { value: "all", label: "All Time" },
+            ] as const
+          ).map((opt) => (
             <button
-              onClick={() => setDateRange("today")}
+              key={opt.value}
+              onClick={() => setDateRange(opt.value)}
               className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "today"
+                dateRange === opt.value
                   ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
+                  : "bg-gray-50 text-gray-600 hover:bg-gray-100"
               }`}
             >
-              Today
+              {opt.label}
             </button>
-            <button
-              onClick={() => setDateRange("yesterday")}
-              className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "yesterday"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
-              }`}
-            >
-              Yesterday
-            </button>
-            <button
-              onClick={() => setDateRange("this_month")}
-              className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "this_month"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
-              }`}
-            >
-              This Month
-            </button>
-            <button
-              onClick={() => setDateRange("last_month")}
-              className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "last_month"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
-              }`}
-            >
-              Last Month
-            </button>
-            <button
-              onClick={() => setDateRange("custom")}
-              className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "custom"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
-              }`}
-            >
-              📅 Custom
-            </button>
-            <button
-              onClick={() => setDateRange("all")}
-              className={`px-3 py-2 text-xs font-medium rounded-lg whitespace-nowrap transition ${
-                dateRange === "all"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-gray-600 hover:bg-white"
-              }`}
-            >
-              All Time
-            </button>
-          </div>
+          ))}
         </div>
 
         {dateRange === "custom" && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 mt-3">
             <input
               type="date"
               value={customStart}
@@ -392,38 +318,36 @@ export default function GSTReportsPage() {
         )}
       </div>
 
-      {/* Summary Cards */}
-      <SummaryCards
-        grossSales={summary.grossSales}
-        refundAmount={summary.refundAmount}
-        netSales={summary.netSales}
-        productGST={summary.productGST}
-        deliveryGST={summary.deliveryGST}
-        totalGST={summary.totalGST}
-      />
+      {/* Top Summary — Two Big Cards */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-white rounded-2xl border border-gray-100 p-5">
+          <p className="text-xs text-gray-500 mb-1">Net Sales</p>
+          <p className="text-2xl font-bold text-blue-600">
+            ₹{netSales.toLocaleString("en-IN")}
+          </p>
+        </div>
+        <div className="bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl p-5 text-white shadow-sm">
+          <p className="text-xs text-white/80 mb-1">Total GST Payable</p>
+          <p className="text-2xl font-bold">
+            ₹{totalGST.toLocaleString("en-IN")}
+          </p>
+        </div>
+      </div>
 
       {/* HSN Table */}
       <HSNTable items={hsnItems} loading={loading} />
 
-      {/* Delivery Section */}
-      <DeliverySection
-        homeDeliveries={deliveryData.homeDeliveries}
-        selfPickups={deliveryData.selfPickups}
-        deliveryCharge={deliveryData.deliveryCharge}
-        deliveryGST={deliveryData.deliveryGST}
-      />
-
-      {/* Export Button */}
+      {/* Export */}
       {hsnItems.length > 0 && (
         <div className="flex justify-center">
           <button
             onClick={handleExportCSV}
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold px-6 py-3 rounded-xl transition shadow-lg flex items-center gap-2"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl transition shadow-sm flex items-center gap-2"
           >
-            📥 Export CSV (for GSTR-1)
+            📥 Export CSV
           </button>
         </div>
       )}
     </div>
   );
-                                   }
+                   }
