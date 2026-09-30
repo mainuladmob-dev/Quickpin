@@ -13,6 +13,7 @@ export interface OrderData {
   paid_amount: number;
   remaining_amount: number;
   refund_amount: number;
+  delivery_charge?: number;
   delivery_type: string | null;
   payment_type: string | null;
   payment_screenshot_url: string | null;
@@ -21,7 +22,11 @@ export interface OrderData {
     id: string;
     qty: number;
     price: number;
-    products?: { name_en: string; weight?: number } | null;
+    products?: {
+      name_en: string;
+      weight?: number;
+      gst_percentage?: number;
+    } | null;
   }[];
   address?: {
     full_name: string;
@@ -155,7 +160,7 @@ export default function OrderCard({
             )}
           </div>
 
-          {/* UPI — whenever exists */}
+          {/* UPI — when exists */}
           {order.upi_id && (
             <div className="mb-3">
               <button
@@ -172,7 +177,7 @@ export default function OrderCard({
             </div>
           )}
 
-          {/* Pending — Payment Failed + Screenshot */}
+          {/* Pending — Screenshot */}
           {isPending && (
             <div className="mb-3 space-y-2">
               <div className="flex items-center gap-2 flex-wrap">
@@ -193,7 +198,7 @@ export default function OrderCard({
             </div>
           )}
 
-          {/* Refund badge — জখন refund_amount > 0 */}
+          {/* Refund badge */}
           {hasRefund && (
             <div className="mb-3 bg-yellow-50 border border-yellow-200 rounded-lg p-2.5">
               <p className="text-xs font-semibold text-yellow-800">
