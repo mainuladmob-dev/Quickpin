@@ -475,29 +475,34 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Select All Bar */}
-      {!loading && orders.length > 0 && !isSearchActive && (
-        <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={
-                selectedIds.length === orders.length && orders.length > 0
-              }
-              onChange={toggleSelectAll}
-              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-xs font-medium text-gray-600">
-              Select All ({orders.length})
-            </span>
-          </label>
-          {selectedIds.length > 0 && (
-            <span className="text-xs font-semibold text-blue-600">
-              {selectedIds.length} selected
-            </span>
-          )}
-        </div>
-      )}
+      {/* Current Weight Card — শুধু Current Filter-এ */}
+{!isSearchActive && orderStatus === "current" && (
+  <CurrentWeightCard />
+)}
+
+{/* Select All Bar */}
+{!loading && orders.length > 0 && !isSearchActive && (
+  <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
+    <label className="flex items-center gap-2 cursor-pointer">
+      <input
+        type="checkbox"
+        checked={
+          selectedIds.length === orders.length && orders.length > 0
+        }
+        onChange={toggleSelectAll}
+        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+      />
+      <span className="text-xs font-medium text-gray-600">
+        Select All ({orders.length})
+      </span>
+    </label>
+    {selectedIds.length > 0 && (
+      <span className="text-xs font-semibold text-blue-600">
+        {selectedIds.length} selected
+      </span>
+    )}
+  </div>
+)}
 
       {/* Orders List */}
       {loading ? (
