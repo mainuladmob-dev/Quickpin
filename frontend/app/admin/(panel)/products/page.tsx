@@ -19,6 +19,7 @@ interface Product {
   is_active: boolean;
   category_id: string | null;
   gst_percentage: number;
+  hsn_code: string | null;
   images: string[] | null;
   categories?: { name_en: string }[] | null;
 }
@@ -55,6 +56,7 @@ export default function ProductsPage() {
     is_active: true,
     category_id: "",
     gst_percentage: "0",
+    hsn_code: "",
   });
 
   const [saving, setSaving] = useState(false);
@@ -65,7 +67,7 @@ export default function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name_en, name_bn, price, weight, stock, is_active, category_id, gst_percentage, images, categories(name_en)"
+        "id, name_en, name_bn, price, weight, stock, is_active, category_id, gst_percentage, hsn_code, images, categories(name_en)"
       )
       .order("created_at", { ascending: false });
 
@@ -107,6 +109,7 @@ export default function ProductsPage() {
       is_active: true,
       category_id: "",
       gst_percentage: "0",
+      hsn_code: "",
     });
     setError("");
     setShowModal(true);
@@ -123,6 +126,7 @@ export default function ProductsPage() {
       is_active: product.is_active,
       category_id: product.category_id || "",
       gst_percentage: String(product.gst_percentage || 0),
+      hsn_code: product.hsn_code || "",
     });
     setError("");
     setShowModal(true);
@@ -158,6 +162,7 @@ export default function ProductsPage() {
       is_active: formData.is_active,
       category_id: formData.category_id,
       gst_percentage: Number(formData.gst_percentage) || 0,
+      hsn_code: formData.hsn_code.trim() || null,
     };
 
     try {
@@ -368,6 +373,11 @@ export default function ProductsPage() {
                   <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
                     GST: {product.gst_percentage || 0}%
                   </span>
+                  {product.hsn_code && (
+                    <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full font-medium font-mono">
+                      HSN: {product.hsn_code}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -431,8 +441,8 @@ export default function ProductsPage() {
                 </label>
                 {categories.length === 0 ? (
                   <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2.5 rounded-xl">
-                    ⚠️ কোনো category নেই। আগে Categories page-এ category
-                    add করুন।
+                    ⚠️ কোনো category নেই। আগে Categories page-এ category add
+                    করুন।
                   </div>
                 ) : (
                   <select
@@ -538,8 +548,25 @@ export default function ProductsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* HSN Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  🔢 HSN Code
+                </label>
+                <input
+                  type="text"
+                  value={formData.hsn_code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, hsn_code: e.target.value })
+                  }
+                  placeholder="e.g. 0701, 1905, 3401"
+                  maxLength={8}
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                />
                 <p className="text-xs text-gray-400 mt-1">
-                  ভারতের GST rate অনুযায়ী select করুন
+                  GSTR-1 Filing-এর জন্য HSN Code (4 বা 6 digit)
                 </p>
               </div>
 
@@ -554,7 +581,7 @@ export default function ProductsPage() {
                     setFormData({ ...formData, stock: e.target.value })
                   }
                   placeholder="100"
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
 
