@@ -3,6 +3,8 @@
 interface StatsCardProps {
   title: string;
   value: string | number;
+  subtitle?: string;
+  bottomText?: string;
   icon: string;
   color?: "blue" | "green" | "red" | "amber" | "purple" | "slate";
   onClick?: () => void;
@@ -12,6 +14,8 @@ interface StatsCardProps {
 export default function StatsCard({
   title,
   value,
+  subtitle,
+  bottomText,
   icon,
   color = "blue",
   onClick,
@@ -35,6 +39,15 @@ export default function StatsCard({
     slate: "bg-slate-100 text-slate-600",
   };
 
+  const valueColor = {
+    blue: "text-blue-600",
+    green: "text-green-600",
+    red: "text-red-600",
+    amber: "text-amber-600",
+    purple: "text-purple-600",
+    slate: "text-slate-600",
+  };
+
   return (
     <div
       onClick={clickable ? onClick : undefined}
@@ -51,14 +64,28 @@ export default function StatsCard({
           {icon}
         </div>
         {clickable && (
-          <span className="text-xs text-gray-400 font-medium">View →</span>
+          <span className="text-xs text-gray-400 font-medium">
+            View →
+          </span>
         )}
       </div>
+
       <p className="text-xs text-gray-500 font-medium mb-1">{title}</p>
-      <p className={`text-2xl font-bold ${colorStyles[color].split(" ")[1]}`}>
-        {value}
-      </p>
+
+      <div className="flex items-baseline gap-1.5 flex-wrap">
+        <p className={`text-2xl font-bold ${valueColor[color]}`}>
+          {value}
+        </p>
+        {subtitle && (
+          <p className="text-xs text-gray-400 font-medium">{subtitle}</p>
+        )}
+      </div>
+
+      {bottomText && (
+        <p className="text-xs text-gray-500 mt-2 font-medium">
+          {bottomText}
+        </p>
+      )}
     </div>
   );
 }
- 
