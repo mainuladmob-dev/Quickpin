@@ -665,7 +665,6 @@ export default function OrdersPage() {
               </div>
             </div>
           </div>
-        </div>
       )}
     </div>
   );
