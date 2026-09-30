@@ -69,6 +69,7 @@ export default function AdminPanelLayout({
 
   const menuItems = [
   { name: "Dashboard", href: "/admin/dashboard", icon: "📊" },
+  { name: "Shopping List", href: "/admin/shopping-list", icon: "🛒" },
   { name: "Orders", href: "/admin/orders", icon: "📦" },
   { name: "Products", href: "/admin/products", icon: "🛍️" },
   { name: "Categories", href: "/admin/categories", icon: "📂" },
