@@ -497,4 +497,4 @@ export default function PrintLabel({ order, onClose }: PrintLabelProps) {
       </div>
     </div>
   );
-  }
+  } 
