@@ -36,6 +36,11 @@ export default function DashboardPage() {
     homeDeliveries: 0,
   });
 
+  const [grossIds, setGrossIds] = useState<OrderIdItem[]>([]);
+  const [refundIds, setRefundIds] = useState<OrderIdItem[]>([]);
+  const [netIds, setNetIds] = useState<OrderIdItem[]>([]);
+  const [deliveryIds, setDeliveryIds] = useState<OrderIdItem[]>([]);
+
   const [modalData, setModalData] = useState<{
     title: string;
     items: OrderIdItem[];
@@ -90,13 +95,7 @@ export default function DashboardPage() {
         total_amount,
         refund_amount,
         delivery_charge,
-        delivery_type,
-        order_items (
-          id,
-          qty,
-          price,
-          products ( name_en, gst_percentage )
-        )
+        delivery_type
       `
       );
 
@@ -129,34 +128,54 @@ export default function DashboardPage() {
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Home Deliveries = delivery_type === "home_delivery" + delivered =====
+    // ===== Home Delivered = delivery_type === "home_delivery" =====
     const homeDelivered = delivered.filter(
       (o: any) => o.delivery_type === "home_delivery"
     );
 
-    // ===== Gross Sales = sum(delivered total_amount) =====
+    // ===== Gross Sales =====
     const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
     );
 
-    // ===== Refund Amount = sum(refund_amount) =====
+    // ===== Refund Amount =====
     const refundAmount = refunded.reduce(
       (sum: number, o: any) => sum + (Number(o.refund_amount) || 0),
       0
     );
 
-    // ===== Delivery Charge = sum of delivery charges for home deliveries =====
+    // ===== Delivery Charge =====
     const deliveryCharge = homeDelivered.reduce(
       (sum: number, o: any) => sum + (Number(o.delivery_charge) || 0),
       0
     );
 
-    // ===== Delivery GST (18%) =====
     const deliveryGST = deliveryCharge * 0.18;
-
-    // ===== Delivery Total = Charge + GST =====
     const deliveryTotal = deliveryCharge + deliveryGST;
+
+    // ===== Order IDs Arrays =====
+    const grossIdsArr: OrderIdItem[] = delivered.map((o: any) => ({
+      id: o.order_number || `#${o.id.slice(0, 8)}`,
+      amount: Number(o.total_amount) || 0,
+    }));
+
+    const refundIdsArr: OrderIdItem[] = refunded.map((o: any) => ({
+      id: o.order_number || `#${o.id.slice(0, 8)}`,
+      amount: Number(o.refund_amount) || 0,
+    }));
+
+    const netIdsArr: OrderIdItem[] = delivered
+      .filter((d: any) => !refunded.some((r: any) => r.id === d.id))
+      .map((o: any) => ({
+        id: o.order_number || `#${o.id.slice(0, 8)}`,
+        amount: Number(o.total_amount) || 0,
+      }));
+
+    const deliveryIdsArr: OrderIdItem[] = homeDelivered.map((o: any) => ({
+      id: o.order_number || `#${o.id.slice(0, 8)}`,
+      amount: Number(o.delivery_charge) || 0,
+    }));
 
     setStats({
       grossSales,
@@ -170,19 +189,16 @@ export default function DashboardPage() {
     setCounts({
       grossOrders: delivered.length,
       refundOrders: refunded.length,
-      netOrders: delivered.length - refunded.length,
+      netOrders: netIdsArr.length,
       homeDeliveries: homeDelivered.length,
     });
 
-    setLoading(false);
-  };
+    setGrossIds(grossIdsArr);
+    setRefundIds(refundIdsArr);
+    setNetIds(netIdsArr);
+    setDeliveryIds(deliveryIdsArr);
 
-  const handleShowModal = (
-    title: string,
-    items: OrderIdItem[],
-    isDelivery = false
-  ) => {
-    setModalData({ title, items, isDelivery });
+    setLoading(false);
   };
 
   if (loading) {
@@ -226,10 +242,12 @@ export default function DashboardPage() {
             bottomText={`📦 ${counts.grossOrders} orders`}
             icon="💰"
             color="green"
-            onClick={() => {
-              // fetch order IDs for gross
-              handleShowModal("Gross Sales", []);
-            }}
+            onClick={() =>
+              setModalData({
+                title: "Gross Sales",
+                items: grossIds,
+              })
+            }
             clickable
           />
           <StatsCard
@@ -239,9 +257,12 @@ export default function DashboardPage() {
             bottomText={`📦 ${counts.refundOrders} refunds`}
             icon="↩️"
             color="red"
-            onClick={() => {
-              handleShowModal("Refund", []);
-            }}
+            onClick={() =>
+              setModalData({
+                title: "Refund",
+                items: refundIds,
+              })
+            }
             clickable
           />
           <StatsCard
@@ -251,9 +272,12 @@ export default function DashboardPage() {
             bottomText={`📦 ${counts.netOrders} orders`}
             icon="📈"
             color="blue"
-            onClick={() => {
-              handleShowModal("Net Sales", []);
-            }}
+            onClick={() =>
+              setModalData({
+                title: "Net Sales",
+                items: netIds,
+              })
+            }
             clickable
           />
         </div>
@@ -275,9 +299,13 @@ export default function DashboardPage() {
             )} + GST ₹${stats.deliveryGST.toLocaleString("en-IN")}`}
             icon="🚚"
             color="purple"
-            onClick={() => {
-              handleShowModal("Home Delivery", [], true);
-            }}
+            onClick={() =>
+              setModalData({
+                title: "Home Delivery",
+                items: deliveryIds,
+                isDelivery: true,
+              })
+            }
             clickable
           />
         </div>
