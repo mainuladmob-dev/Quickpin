@@ -8,8 +8,8 @@ import OrderFilters, {
   type OrderTypeFilter,
 } from "./components/OrderFilters";
 import OrderCard, { type OrderData } from "./components/OrderCard";
-import PrintLabel from "./components/PrintLabel";
-import PrintLabelBulk from "./components/PrintLabelBulk";
+import PrintOptionsModal from "./components/PrintOptionsModal";
+import PrintOptionsBulkModal from "./components/PrintOptionsBulkModal";
 import RefundModal from "./components/RefundModal";
 import StatusChangeModal, {
   type OrderStatus,
@@ -59,13 +59,11 @@ export default function OrdersPage() {
     spam: 0,
   });
 
-  // Bulk Print
+  // Modals
+  const [printOrder, setPrintOrder] = useState<OrderData | null>(null);
   const [bulkPrintOrders, setBulkPrintOrders] = useState<OrderData[] | null>(
     null
   );
-
-  // Modals
-  const [printOrder, setPrintOrder] = useState<OrderData | null>(null);
   const [refundOrder, setRefundOrder] = useState<OrderData | null>(null);
   const [statusChangeIds, setStatusChangeIds] = useState<string[] | null>(null);
   const [screenshotUrl, setScreenshotUrl] = useState<string | null>(null);
@@ -166,6 +164,7 @@ export default function OrdersPage() {
         order_status,
         payment_type,
         delivery_type,
+        delivery_charge,
         total_amount,
         paid_amount,
         remaining_amount,
@@ -177,7 +176,7 @@ export default function OrdersPage() {
           id,
           qty,
           price,
-          products ( name_en, weight )
+          products ( name_en, weight, gst_percentage )
         )
       `
     );
@@ -198,7 +197,6 @@ export default function OrdersPage() {
     } else if (orderStatus !== "all") {
       query = query.eq("order_status", orderStatus);
     } else {
-      // "all" → শুধু successful orders
       query = query.eq("payment_status", "success");
     }
 
@@ -229,6 +227,7 @@ export default function OrdersPage() {
       paid_amount: Number(o.paid_amount) || 0,
       remaining_amount: Number(o.remaining_amount) || 0,
       refund_amount: Number(o.refund_amount) || 0,
+      delivery_charge: Number(o.delivery_charge) || 0,
       delivery_type: o.delivery_type || null,
       payment_type: o.payment_type || null,
       payment_screenshot_url: o.payment_screenshot_url || null,
@@ -241,6 +240,7 @@ export default function OrdersPage() {
           ? {
               name_en: item.products.name_en,
               weight: item.products.weight,
+              gst_percentage: Number(item.products.gst_percentage) || 0,
             }
           : null,
       })),
@@ -394,7 +394,8 @@ export default function OrdersPage() {
     await fetchCounts();
   };
 
-  const handleBulkPrintSelected = () => {
+  // ✅ Bulk Print — Only Current Orders
+  const handleBulkPrint = () => {
     const selectedOrders = orders.filter((o) =>
       selectedIds.includes(o.id)
     );
@@ -404,18 +405,19 @@ export default function OrdersPage() {
       return;
     }
 
-    const printableOrders = selectedOrders.filter(
-      (o) => o.order_status !== "pending" && o.order_status !== "spam"
+    // Check: সব current?
+    const nonCurrentOrders = selectedOrders.filter(
+      (o) => o.order_status !== "current"
     );
 
-    if (printableOrders.length === 0) {
+    if (nonCurrentOrders.length > 0) {
       alert(
-        "Selected orders-এ Pending বা Spam ছাড়া কোনো print যোগ্য order নেই"
+        `⚠️ Bulk Print শুধু Current Orders-এর জন্য।\n\n${nonCurrentOrders.length}টা order current নেই।\n\nশুধু current orders select করুন।`
       );
       return;
     }
 
-    setBulkPrintOrders(printableOrders);
+    setBulkPrintOrders(selectedOrders);
   };
 
   const isSearchActive = searchQuery.trim().length > 0;
@@ -570,7 +572,7 @@ export default function OrdersPage() {
             </span>
 
             <button
-              onClick={handleBulkPrintSelected}
+              onClick={handleBulkPrint}
               className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg whitespace-nowrap transition"
             >
               🖨️ Print
@@ -600,11 +602,14 @@ export default function OrdersPage() {
 
       {/* Modals */}
       {printOrder && (
-        <PrintLabel order={printOrder} onClose={() => setPrintOrder(null)} />
+        <PrintOptionsModal
+          order={printOrder}
+          onClose={() => setPrintOrder(null)}
+        />
       )}
 
       {bulkPrintOrders && (
-        <PrintLabelBulk
+        <PrintOptionsBulkModal
           orders={bulkPrintOrders}
           onClose={() => setBulkPrintOrders(null)}
         />
@@ -647,7 +652,7 @@ export default function OrdersPage() {
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h3 className="text-sm font-bold text-gray-900">
-                📸 Payment Screenshot
+               📸 Payment Screenshot
               </h3>
               <button
                 onClick={() => setScreenshotUrl(null)}
@@ -657,14 +662,14 @@ export default function OrdersPage() {
               </button>
             </div>
             <div className="p-4">
-                        <img
-                  src={screenshotUrl}
-                  alt="Payment screenshot"
-                  className="max-w-full max-h-[70vh] object-contain mx-auto rounded-lg"
-                />
-              </div>
+              <img
+                src={screenshotUrl}
+                alt="Payment screenshot"
+                className="max-w-full max-h-[70vh] object-contain mx-auto rounded-lg"
+              />
             </div>
           </div>
+        </div>
       )}
     </div>
   );
