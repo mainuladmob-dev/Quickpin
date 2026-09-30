@@ -584,7 +584,7 @@ export default function ProductsPage() {
                 onClick={() => setShowModal(false)}
                 disabled={saving}
                 className="flex-1 py-3 text-sm font-semibold t
-                              className="flex-1 py-3 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition disabled:opacity-50"
+               className="flex-1 py-3 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition disabled:opacity-50"
               >
                 Cancel
               </button>
