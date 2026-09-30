@@ -18,6 +18,16 @@ export type OrderTypeFilter =
   | "advance_home"
   | "advance_self";
 
+interface StatusCounts {
+  all: number;
+  current: number;
+  out_for_delivery: number;
+  delivered: number;
+  refund: number;
+  pending: number;
+  spam: number;
+}
+
 interface OrderFiltersProps {
   dateRange: DateRange;
   setDateRange: (r: DateRange) => void;
@@ -29,6 +39,7 @@ interface OrderFiltersProps {
   setOrderStatus: (s: OrderStatusFilter) => void;
   orderType: OrderTypeFilter;
   setOrderType: (t: OrderTypeFilter) => void;
+  counts: StatusCounts;
 }
 
 export default function OrderFilters({
@@ -42,15 +53,24 @@ export default function OrderFilters({
   setOrderStatus,
   orderType,
   setOrderType,
+  counts,
 }: OrderFiltersProps) {
-  const statusOptions: { value: OrderStatusFilter; label: string }[] = [
-    { value: "all", label: "All" },
-    { value: "current", label: "Current" },
-    { value: "out_for_delivery", label: "Out for Delivery" },
-    { value: "delivered", label: "Delivered" },
-    { value: "refund", label: "↩️ Refunded" },
-    { value: "pending", label: "Pending" },
-    { value: "spam", label: "Spam" },
+  const statusOptions: {
+    value: OrderStatusFilter;
+    label: string;
+    count: number;
+  }[] = [
+    { value: "all", label: "All", count: counts.all },
+    { value: "current", label: "Current", count: counts.current },
+    {
+      value: "out_for_delivery",
+      label: "OFD",
+      count: counts.out_for_delivery,
+    },
+    { value: "delivered", label: "Delivered", count: counts.delivered },
+    { value: "refund", label: "↩️ Refunded", count: counts.refund },
+    { value: "pending", label: "Pending", count: counts.pending },
+    { value: "spam", label: "Spam", count: counts.spam },
   ];
 
   const typeOptions: { value: OrderTypeFilter; label: string }[] = [
@@ -148,25 +168,37 @@ export default function OrderFilters({
         </div>
       </div>
 
-      {/* Status Filter */}
+      {/* Status Filter with Counts */}
       <div className="bg-white rounded-xl p-3 shadow-sm border border-gray-100">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
           📊 Status
         </p>
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
-          {statusOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setOrderStatus(opt.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition border ${
-                orderStatus === opt.value
-                  ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {statusOptions.map((opt) => {
+            const isActive = orderStatus === opt.value;
+            return (
+              <button
+                key={opt.value}
+                onClick={() => setOrderStatus(opt.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition border flex items-center gap-1.5 ${
+                  isActive
+                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                }`}
+              >
+                <span>{opt.label}</span>
+                <span
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    isActive
+                      ? "bg-white/25 text-white"
+                      : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {opt.count}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
