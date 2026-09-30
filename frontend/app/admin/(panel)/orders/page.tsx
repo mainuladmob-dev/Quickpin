@@ -474,11 +474,6 @@ export default function OrdersPage() {
         />
       )}
 
-      {/* Current Weight Card — শুধু Current Filter-এ */}
-{!isSearchActive && orderStatus === "current" && (
-  <CurrentWeightCard />
-)}
-
 {/* Select All Bar */}
 {!loading && orders.length > 0 && !isSearchActive && (
   <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
