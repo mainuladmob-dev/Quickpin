@@ -43,6 +43,12 @@ const SETTING_FIELDS: Record<string, FieldMeta> = {
 
   // Delivery
   delivery_charge: { label: "Delivery Charge (₹)", icon: "🚚", type: "number" },
+  delivery_gst_percentage: {
+    label: "Delivery GST %",
+    icon: "📊",
+    type: "number",
+    hint: "Common: 18% for delivery service (India)",
+  },
   enable_home_delivery: { label: "Home Delivery", icon: "🏠", type: "toggle" },
   enable_self_pickup: { label: "Self Pickup", icon: "🏬", type: "toggle" },
 
@@ -89,7 +95,12 @@ const SECTIONS: Section[] = [
   {
     title: "Delivery",
     icon: "🚚",
-    keys: ["delivery_charge", "enable_home_delivery", "enable_self_pickup"],
+    keys: [
+      "delivery_charge",
+      "delivery_gst_percentage",
+      "enable_home_delivery",
+      "enable_self_pickup",
+    ],
   },
   {
     title: "Cart",
@@ -258,7 +269,7 @@ export default function SettingsPage() {
 
     const value = settings[key] || "";
 
-    // ============ TOGGLE ============
+    // Toggle
     if (meta.type === "toggle") {
       const isOn = value === "true" || value === "1";
       return (
@@ -293,7 +304,7 @@ export default function SettingsPage() {
       );
     }
 
-    // ============ IMAGE UPLOAD ============
+    // Image Upload
     if (meta.type === "image") {
       return (
         <div
@@ -353,7 +364,7 @@ export default function SettingsPage() {
       );
     }
 
-    // ============ TEXTAREA ============
+    // Textarea
     if (meta.type === "textarea") {
       return (
         <div
@@ -376,7 +387,7 @@ export default function SettingsPage() {
       );
     }
 
-    // ============ NUMBER / TEXT ============
+    // Number / Text
     const inputType = meta.type === "number" ? "number" : "text";
 
     return (
@@ -442,7 +453,6 @@ export default function SettingsPage() {
                 key={section.title}
                 className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
               >
-                {/* Section Header */}
                 <button
                   onClick={() => toggleSection(section.title)}
                   className="w-full flex items-center justify-between px-4 py-4 hover:bg-gray-50 transition"
@@ -463,7 +473,6 @@ export default function SettingsPage() {
                   </span>
                 </button>
 
-                {/* Section Content */}
                 {isOpen && (
                   <div className="px-4 pb-3 border-t border-gray-100">
                     {availableKeys.map((key) => renderField(key))}
@@ -498,4 +507,4 @@ export default function SettingsPage() {
       )}
     </div>
   );
-            }
+          }
