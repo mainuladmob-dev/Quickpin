@@ -68,17 +68,18 @@ export default function AdminPanelLayout({
   };
 
   const menuItems = [
-    { name: "Dashboard", href: "/admin/dashboard", icon: "📊" },
-    { name: "Orders", href: "/admin/orders", icon: "📦" },
-    { name: "Products", href: "/admin/products", icon: "🛍️" },
-    { name: "Categories", href: "/admin/categories", icon: "📂" },
-    { name: "Banners", href: "/admin/banners", icon: "🖼️" },
-    { name: "Admins", href: "/admin/admins", icon: "👤" },
-    { name: "Customers", href: "/admin/customers", icon: "👥" },
-    { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "🔗" },
-    { name: "Settings", href: "/admin/settings", icon: "⚙️" },
-    { name: "My Profile", href: "/admin/profile", icon: "🔑" },
-  ];
+  { name: "Dashboard", href: "/admin/dashboard", icon: "📊" },
+  { name: "Orders", href: "/admin/orders", icon: "📦" },
+  { name: "Products", href: "/admin/products", icon: "🛍️" },
+  { name: "Categories", href: "/admin/categories", icon: "📂" },
+  { name: "Banners", href: "/admin/banners", icon: "🖼️" },
+  { name: "Admins", href: "/admin/admins", icon: "👤" },
+  { name: "Customers", href: "/admin/customers", icon: "👥" },
+  { name: "Webhook Logs", href: "/admin/webhook-logs", icon: "🔗" },
+  { name: "GST Reports", href: "/admin/gst-reports", icon: "🧾" },
+  { name: "Settings", href: "/admin/settings", icon: "⚙️" },
+  { name: "My Profile", href: "/admin/profile", icon: "🔑" },
+];
 
   if (loading) {
     return (
