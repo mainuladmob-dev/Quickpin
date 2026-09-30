@@ -10,6 +10,7 @@ import OrderFilters, {
 import OrderCard, { type OrderData } from "./components/OrderCard";
 import PrintOptionsModal from "./components/PrintOptionsModal";
 import PrintOptionsBulkModal from "./components/PrintOptionsBulkModal";
+import CurrentWeightCard from "./components/CurrentWeightCard";
 import RefundModal from "./components/RefundModal";
 import StatusChangeModal, {
   type OrderStatus,
