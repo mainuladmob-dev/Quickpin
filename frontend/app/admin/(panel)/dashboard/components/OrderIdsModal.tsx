@@ -2,15 +2,22 @@
 
 import { useState } from "react";
 
+interface OrderIdItem {
+  id: string;
+  amount: number;
+}
+
 interface OrderIdsModalProps {
   title: string;
-  orderIds: string[];
+  orderIds: OrderIdItem[];
+  isDelivery?: boolean;
   onClose: () => void;
 }
 
 export default function OrderIdsModal({
   title,
   orderIds,
+  isDelivery = false,
   onClose,
 }: OrderIdsModalProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -27,13 +34,19 @@ export default function OrderIdsModal({
 
   const handleCopyAll = async () => {
     try {
-      await navigator.clipboard.writeText(orderIds.join("\n"));
+      const allIds = orderIds.map((item) => item.id).join("\n");
+      await navigator.clipboard.writeText(allIds);
       setCopiedId("ALL");
       setTimeout(() => setCopiedId(null), 1500);
     } catch (err) {
       console.error("Copy failed:", err);
     }
   };
+
+  const totalAmount = orderIds.reduce(
+    (sum, item) => sum + (item.amount || 0),
+    0
+  );
 
   return (
     <div
@@ -50,6 +63,11 @@ export default function OrderIdsModal({
             <h2 className="text-lg font-bold text-gray-900">{title}</h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {orderIds.length} order{orderIds.length !== 1 ? "s" : ""}
+              {totalAmount > 0 && !isDelivery && (
+                <span className="ml-2 font-semibold text-gray-700">
+                  • Total ₹{totalAmount.toLocaleString("en-IN")}
+                </span>
+              )}
             </p>
           </div>
           <button
@@ -80,29 +98,37 @@ export default function OrderIdsModal({
               <p className="text-gray-500 text-sm">No orders found</p>
             </div>
           ) : (
-            orderIds.map((id, index) => (
+            orderIds.map((item, index) => (
               <div
-                key={id + index}
-                className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-lg px-4 py-3 transition group"
+                key={item.id + index}
+                className="flex items-center justify-between bg-gray-50 hover:bg-gray-100 rounded-lg px-3 py-2.5 transition"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span className="text-xs text-gray-400 font-mono w-6">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <span className="text-xs text-gray-400 font-mono w-6 shrink-0">
                     {index + 1}.
                   </span>
-                  <span className="text-sm font-mono text-gray-800 truncate">
-                    {id}
+                  <span className="text-sm font-mono font-semibold text-gray-800 truncate">
+                    {item.id}
                   </span>
                 </div>
-                <button
-                  onClick={() => handleCopy(id)}
-                  className={`text-xs px-3 py-1.5 rounded-md transition shrink-0 ml-2 ${
-                    copiedId === id
-                      ? "bg-green-100 text-green-600"
-                      : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 border border-gray-200"
-                  }`}
-                >
-                  {copiedId === id ? "✅ Copied" : "📋 Copy"}
-                </button>
+
+                <div className="flex items-center gap-2 shrink-0 ml-2">
+                  {item.amount > 0 && (
+                    <span className="text-sm font-bold text-gray-700">
+                      ₹{item.amount.toLocaleString("en-IN")}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => handleCopy(item.id)}
+                    className={`text-xs px-2 py-1 rounded-md transition ${
+                      copiedId === item.id
+                        ? "bg-green-100 text-green-600"
+                        : "bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600 border border-gray-200"
+                    }`}
+                  >
+                    {copiedId === item.id ? "✅" : "📋"}
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -110,4 +136,4 @@ export default function OrderIdsModal({
       </div>
     </div>
   );
-} 
+}
