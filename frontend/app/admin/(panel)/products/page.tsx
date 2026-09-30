@@ -18,9 +18,18 @@ interface Product {
   stock: number;
   is_active: boolean;
   category_id: string | null;
+  gst_percentage: number;
   images: string[] | null;
   categories?: { name_en: string }[] | null;
 }
+
+const GST_RATES = [
+  { value: 0, label: "0% (Fresh/Exempt)" },
+  { value: 5, label: "5% (Packaged food)" },
+  { value: 12, label: "12% (Processed)" },
+  { value: 18, label: "18% (General)" },
+  { value: 28, label: "28% (Luxury)" },
+];
 
 export default function ProductsPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -45,6 +54,7 @@ export default function ProductsPage() {
     stock: "",
     is_active: true,
     category_id: "",
+    gst_percentage: "0",
   });
 
   const [saving, setSaving] = useState(false);
@@ -55,7 +65,7 @@ export default function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name_en, name_bn, price, weight, stock, is_active, category_id, images, categories(name_en)"
+        "id, name_en, name_bn, price, weight, stock, is_active, category_id, gst_percentage, images, categories(name_en)"
       )
       .order("created_at", { ascending: false });
 
@@ -96,6 +106,7 @@ export default function ProductsPage() {
       stock: "",
       is_active: true,
       category_id: "",
+      gst_percentage: "0",
     });
     setError("");
     setShowModal(true);
@@ -111,6 +122,7 @@ export default function ProductsPage() {
       stock: String(product.stock || ""),
       is_active: product.is_active,
       category_id: product.category_id || "",
+      gst_percentage: String(product.gst_percentage || 0),
     });
     setError("");
     setShowModal(true);
@@ -145,6 +157,7 @@ export default function ProductsPage() {
       stock: Number(formData.stock) || 0,
       is_active: formData.is_active,
       category_id: formData.category_id,
+      gst_percentage: Number(formData.gst_percentage) || 0,
     };
 
     try {
@@ -346,11 +359,16 @@ export default function ProductsPage() {
                     Stock: {product.stock}
                   </span>
                 </div>
-                {product.categories?.[0]?.name_en && (
-                  <span className="inline-block mt-1.5 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                    📂 {product.categories[0].name_en}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  {product.categories?.[0]?.name_en && (
+                    <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                      📂 {product.categories[0].name_en}
+                    </span>
+                  )}
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                    GST: {product.gst_percentage || 0}%
                   </span>
-                )}
+                </div>
               </div>
 
               {/* Actions */}
@@ -406,7 +424,7 @@ export default function ProductsPage() {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Category Dropdown */}
+              {/* Category */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   📂 Category *
@@ -499,6 +517,32 @@ export default function ProductsPage() {
                 </div>
               </div>
 
+              {/* GST */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  📊 GST Percentage *
+                </label>
+                <select
+                  value={formData.gst_percentage}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      gst_percentage: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                >
+                  {GST_RATES.map((rate) => (
+                    <option key={rate.value} value={rate.value}>
+                      {rate.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  ভারতের GST rate অনুযায়ী select করুন
+                </p>
+              </div>
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Stock
@@ -539,7 +583,8 @@ export default function ProductsPage() {
               <button
                 onClick={() => setShowModal(false)}
                 disabled={saving}
-                className="flex-1 py-3 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition disabled:opacity-50"
+                className="flex-1 py-3 text-sm font-semibold t
+                              className="flex-1 py-3 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -556,4 +601,4 @@ export default function ProductsPage() {
       )}
     </div>
   );
-                  }
+}
