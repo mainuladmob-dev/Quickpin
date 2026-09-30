@@ -59,18 +59,35 @@ export default function OrderFilters({
     value: OrderStatusFilter;
     label: string;
     count: number;
+    color: string;
   }[] = [
-    { value: "all", label: "All", count: counts.all },
-    { value: "current", label: "Current", count: counts.current },
+    { value: "all", label: "All", count: counts.all, color: "blue" },
+    { value: "current", label: "Current", count: counts.current, color: "blue" },
     {
       value: "out_for_delivery",
-      label: "OFD",
+      label: "Out for Delivery",
       count: counts.out_for_delivery,
+      color: "purple",
     },
-    { value: "delivered", label: "Delivered", count: counts.delivered },
-    { value: "refund", label: "↩️ Refunded", count: counts.refund },
-    { value: "pending", label: "Pending", count: counts.pending },
-    { value: "spam", label: "Spam", count: counts.spam },
+    {
+      value: "delivered",
+      label: "Delivered",
+      count: counts.delivered,
+      color: "green",
+    },
+    {
+      value: "refund",
+      label: "↩️ Refunded",
+      count: counts.refund,
+      color: "yellow",
+    },
+    {
+      value: "pending",
+      label: "Pending",
+      count: counts.pending,
+      color: "amber",
+    },
+    { value: "spam", label: "Spam", count: counts.spam, color: "red" },
   ];
 
   const typeOptions: { value: OrderTypeFilter; label: string }[] = [
@@ -80,6 +97,43 @@ export default function OrderFilters({
     { value: "advance_home", label: "Advance + Home" },
     { value: "advance_self", label: "Advance + Self" },
   ];
+
+  const getStatusColorClasses = (color: string, isActive: boolean) => {
+    const map: Record<string, { active: string; badge: string }> = {
+      blue: {
+        active: "bg-blue-600 text-white border-blue-600 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+      purple: {
+        active: "bg-purple-600 text-white border-purple-600 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+      green: {
+        active: "bg-green-600 text-white border-green-600 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+      yellow: {
+        active: "bg-yellow-500 text-white border-yellow-500 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+      amber: {
+        active: "bg-amber-500 text-white border-amber-500 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+      red: {
+        active: "bg-red-600 text-white border-red-600 shadow-sm",
+        badge: "bg-white/25 text-white",
+      },
+    };
+
+    if (isActive) return map[color].active;
+    return "bg-white text-gray-600 border-gray-200 hover:bg-gray-50";
+  };
+
+  const getBadgeColorClasses = (color: string, isActive: boolean) => {
+    if (isActive) return "bg-white/25 text-white";
+    return "bg-gray-100 text-gray-600";
+  };
 
   return (
     <div className="space-y-3">
@@ -180,19 +234,17 @@ export default function OrderFilters({
               <button
                 key={opt.value}
                 onClick={() => setOrderStatus(opt.value)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition border flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap transition border flex items-center gap-1.5 ${getStatusColorClasses(
+                  opt.color,
                   isActive
-                    ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                    : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                }`}
+                )}`}
               >
                 <span>{opt.label}</span>
                 <span
-                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${getBadgeColorClasses(
+                    opt.color,
                     isActive
-                      ? "bg-white/25 text-white"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
+                  )}`}
                 >
                   {opt.count}
                 </span>
