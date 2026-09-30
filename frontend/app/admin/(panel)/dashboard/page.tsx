@@ -4,9 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import DateFilter from "./components/DateFilter";
 import StatsCard from "./components/StatsCard";
-import WeightBreakdownModal from "./components/WeightBreakdownModal";
+import OrderIdsModal from "./components/OrderIdsModal";
 
 type DateRange = "today" | "yesterday" | "custom" | "all";
+
+interface OrderIdItem {
+  id: string;
+  amount: number;
+}
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -19,14 +24,23 @@ export default function DashboardPage() {
     grossSales: 0,
     refundAmount: 0,
     netSales: 0,
-    totalWeight: 0,
+    deliveryCharge: 0,
+    deliveryGST: 0,
+    deliveryTotal: 0,
   });
 
-  const [weightBreakdown, setWeightBreakdown] = useState<
-    { name: string; weight: number }[]
-  >([]);
+  const [counts, setCounts] = useState({
+    grossOrders: 0,
+    refundOrders: 0,
+    netOrders: 0,
+    homeDeliveries: 0,
+  });
 
-  const [weightModalOpen, setWeightModalOpen] = useState(false);
+  const [modalData, setModalData] = useState<{
+    title: string;
+    items: OrderIdItem[];
+    isDelivery?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     fetchStats();
@@ -58,7 +72,6 @@ export default function DashboardPage() {
       return { start: start.toISOString(), end: end.toISOString() };
     }
 
-    // "all" → no date filter
     return null;
   };
 
@@ -66,20 +79,26 @@ export default function DashboardPage() {
     setLoading(true);
     const range = getDateRange();
 
-    let query = supabase.from("orders").select(
-      `
-      id,
-      order_status,
-      payment_status,
-      total_amount,
-      refund_amount,
-      order_items (
+    let query = supabase
+      .from("orders")
+      .select(
+        `
         id,
-        qty,
-        products ( name_en, weight )
-      )
-    `
-    );
+        order_number,
+        order_status,
+        payment_status,
+        total_amount,
+        refund_amount,
+        delivery_charge,
+        delivery_type,
+        order_items (
+          id,
+          qty,
+          price,
+          products ( name_en, gst_percentage )
+        )
+      `
+      );
 
     if (range) {
       query = query
@@ -110,57 +129,60 @@ export default function DashboardPage() {
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Gross Sales = শুধু delivered =====
+    // ===== Home Deliveries = delivery_type === "home_delivery" + delivered =====
+    const homeDelivered = delivered.filter(
+      (o: any) => o.delivery_type === "home_delivery"
+    );
+
+    // ===== Gross Sales = sum(delivered total_amount) =====
     const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
     );
 
+    // ===== Refund Amount = sum(refund_amount) =====
     const refundAmount = refunded.reduce(
       (sum: number, o: any) => sum + (Number(o.refund_amount) || 0),
       0
     );
 
-    // ===== Weight = Current orders =====
-    const currentOrders = successful.filter(
-      (o: any) => o.order_status === "current"
-    );
-
-    const productMap: Record<string, number> = {};
-
-    currentOrders.forEach((order: any) => {
-      (order.order_items || []).forEach((item: any) => {
-        const productWeight = Number(item.products?.weight) || 0;
-        const itemTotalWeight = (Number(item.qty) || 0) * productWeight;
-        const name = item.products?.name_en || "Unknown";
-
-        if (!productMap[name]) productMap[name] = 0;
-        productMap[name] += itemTotalWeight;
-      });
-    });
-
-    const weightBreakdownList = Object.entries(productMap)
-      .map(([name, weight]) => ({
-        name,
-        weight: Number(weight.toFixed(2)),
-      }))
-      .filter((item) => item.weight > 0)
-      .sort((a, b) => b.weight - a.weight);
-
-    const totalWeight = weightBreakdownList.reduce(
-      (sum, item) => sum + item.weight,
+    // ===== Delivery Charge = sum of delivery charges for home deliveries =====
+    const deliveryCharge = homeDelivered.reduce(
+      (sum: number, o: any) => sum + (Number(o.delivery_charge) || 0),
       0
     );
+
+    // ===== Delivery GST (18%) =====
+    const deliveryGST = deliveryCharge * 0.18;
+
+    // ===== Delivery Total = Charge + GST =====
+    const deliveryTotal = deliveryCharge + deliveryGST;
 
     setStats({
       grossSales,
       refundAmount,
       netSales: grossSales - refundAmount,
-      totalWeight: Number(totalWeight.toFixed(2)),
+      deliveryCharge,
+      deliveryGST,
+      deliveryTotal,
     });
 
-    setWeightBreakdown(weightBreakdownList);
+    setCounts({
+      grossOrders: delivered.length,
+      refundOrders: refunded.length,
+      netOrders: delivered.length - refunded.length,
+      homeDeliveries: homeDelivered.length,
+    });
+
     setLoading(false);
+  };
+
+  const handleShowModal = (
+    title: string,
+    items: OrderIdItem[],
+    isDelivery = false
+  ) => {
+    setModalData({ title, items, isDelivery });
   };
 
   if (loading) {
@@ -193,55 +215,83 @@ export default function DashboardPage() {
       {/* Financial Row */}
       <div>
         <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          💰 Financial {dateRange === "all" ? "(All Time)" : "(Completed Orders)"}
+          💰 Financial{" "}
+          {dateRange === "all" ? "(All Time)" : "(Completed Orders)"}
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <StatsCard
             title="Gross Sales"
             value={`₹${stats.grossSales.toLocaleString("en-IN")}`}
+            subtitle="(incl. GST)"
+            bottomText={`📦 ${counts.grossOrders} orders`}
             icon="💰"
             color="green"
+            onClick={() => {
+              // fetch order IDs for gross
+              handleShowModal("Gross Sales", []);
+            }}
+            clickable
           />
           <StatsCard
             title="Refund"
             value={`₹${stats.refundAmount.toLocaleString("en-IN")}`}
+            subtitle="(incl. GST)"
+            bottomText={`📦 ${counts.refundOrders} refunds`}
             icon="↩️"
             color="red"
+            onClick={() => {
+              handleShowModal("Refund", []);
+            }}
+            clickable
           />
           <StatsCard
             title="Net Sales"
             value={`₹${stats.netSales.toLocaleString("en-IN")}`}
+            subtitle="(incl. GST)"
+            bottomText={`📦 ${counts.netOrders} orders`}
             icon="📈"
             color="blue"
-          />
-        </div>
-      </div>
-
-      {/* Weight Row */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          ⚖️ Weight to Buy (Current Orders)
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <StatsCard
-            title="Total Weight"
-            value={`${stats.totalWeight} kg`}
-            icon="⚖️"
-            color="purple"
-            onClick={() => setWeightModalOpen(true)}
+            onClick={() => {
+              handleShowModal("Net Sales", []);
+            }}
             clickable
           />
         </div>
       </div>
 
-      {/* Weight Modal */}
-      {weightModalOpen && (
-        <WeightBreakdownModal
-          breakdown={weightBreakdown}
-          totalWeight={stats.totalWeight}
-          onClose={() => setWeightModalOpen(false)}
+      {/* Home Delivery Row */}
+      <div>
+        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          🚚 Home Delivery{" "}
+          {dateRange === "all" ? "(All Time)" : "(Completed Orders)"}
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatsCard
+            title="Home Delivery"
+            value={`₹${stats.deliveryTotal.toLocaleString("en-IN")}`}
+            subtitle="(incl. GST)"
+            bottomText={`📦 ${counts.homeDeliveries} deliveries • Charge ₹${stats.deliveryCharge.toLocaleString(
+              "en-IN"
+            )} + GST ₹${stats.deliveryGST.toLocaleString("en-IN")}`}
+            icon="🚚"
+            color="purple"
+            onClick={() => {
+              handleShowModal("Home Delivery", [], true);
+            }}
+            clickable
+          />
+        </div>
+      </div>
+
+      {/* Modal */}
+      {modalData && (
+        <OrderIdsModal
+          title={modalData.title}
+          orderIds={modalData.items}
+          isDelivery={modalData.isDelivery}
+          onClose={() => setModalData(null)}
         />
       )}
     </div>
   );
-}
+    }
