@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import DateFilter from "./components/DateFilter";
 import StatsCard from "./components/StatsCard";
-import OrderIdsModal from "./components/OrderIdsModal";
 import WeightBreakdownModal from "./components/WeightBreakdownModal";
 
 type DateRange = "today" | "yesterday" | "custom" | "all";
@@ -17,30 +16,17 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
 
   const [stats, setStats] = useState({
-    currentOrders: 0,
-    pendingOrders: 0,
-    deliveredOrders: 0,
-    refundOrders: 0,
     grossSales: 0,
     refundAmount: 0,
     netSales: 0,
     totalWeight: 0,
   });
 
-  const [orderIds, setOrderIds] = useState<{
-    current: string[];
-    pending: string[];
-    delivered: string[];
-    refund: string[];
-  }>({ current: [], pending: [], delivered: [], refund: [] });
-
   const [weightBreakdown, setWeightBreakdown] = useState<
     { name: string; weight: number }[]
   >([]);
 
-  const [modalOpen, setModalOpen] = useState<
-    null | "current" | "pending" | "delivered" | "refund" | "weight"
-  >(null);
+  const [weightModalOpen, setWeightModalOpen] = useState(false);
 
   useEffect(() => {
     fetchStats();
@@ -83,12 +69,10 @@ export default function DashboardPage() {
     let query = supabase.from("orders").select(
       `
       id,
-      order_number,
       order_status,
       payment_status,
       total_amount,
       refund_amount,
-      created_at,
       order_items (
         id,
         qty,
@@ -97,7 +81,6 @@ export default function DashboardPage() {
     `
     );
 
-    // Apply date filter only if range exists (not "all")
     if (range) {
       query = query
         .gte("created_at", range.start)
@@ -117,16 +100,6 @@ export default function DashboardPage() {
       (o: any) => o.payment_status === "success"
     );
 
-    // ===== Pending = payment_status === "pending" =====
-    const pending = orders.filter(
-      (o: any) => o.payment_status === "pending"
-    );
-
-    // ===== Current = order_status === "current" =====
-    const currentOrders = successful.filter(
-      (o: any) => o.order_status === "current"
-    );
-
     // ===== Delivered = order_status === "delivered" =====
     const delivered = successful.filter(
       (o: any) => o.order_status === "delivered"
@@ -137,7 +110,7 @@ export default function DashboardPage() {
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Gross Sales = delivered only =====
+    // ===== Gross Sales = শুধু delivered =====
     const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
@@ -149,6 +122,10 @@ export default function DashboardPage() {
     );
 
     // ===== Weight = Current orders =====
+    const currentOrders = successful.filter(
+      (o: any) => o.order_status === "current"
+    );
+
     const productMap: Record<string, number> = {};
 
     currentOrders.forEach((order: any) => {
@@ -176,21 +153,10 @@ export default function DashboardPage() {
     );
 
     setStats({
-      currentOrders: currentOrders.length,
-      pendingOrders: pending.length,
-      deliveredOrders: delivered.length,
-      refundOrders: refunded.length,
       grossSales,
       refundAmount,
       netSales: grossSales - refundAmount,
       totalWeight: Number(totalWeight.toFixed(2)),
-    });
-
-    setOrderIds({
-      current: currentOrders.map((o: any) => o.order_number || o.id),
-      pending: pending.map((o: any) => o.order_number || o.id),
-      delivered: delivered.map((o: any) => o.order_number || o.id),
-      refund: refunded.map((o: any) => o.order_number || o.id),
     });
 
     setWeightBreakdown(weightBreakdownList);
@@ -241,55 +207,12 @@ export default function DashboardPage() {
             value={`₹${stats.refundAmount.toLocaleString("en-IN")}`}
             icon="↩️"
             color="red"
-            onClick={() => setModalOpen("refund")}
-            clickable
           />
           <StatsCard
             title="Net Sales"
             value={`₹${stats.netSales.toLocaleString("en-IN")}`}
             icon="📈"
             color="blue"
-          />
-        </div>
-      </div>
-
-      {/* Order Status Row */}
-      <div>
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
-          📦 Order Status
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatsCard
-            title="Current Orders"
-            value={stats.currentOrders}
-            icon="📦"
-            color="blue"
-            onClick={() => setModalOpen("current")}
-            clickable
-          />
-          <StatsCard
-            title="Pending"
-            value={stats.pendingOrders}
-            icon="⏳"
-            color="amber"
-            onClick={() => setModalOpen("pending")}
-            clickable
-          />
-          <StatsCard
-            title="Delivered"
-            value={stats.deliveredOrders}
-            icon="✅"
-            color="green"
-            onClick={() => setModalOpen("delivered")}
-            clickable
-          />
-          <StatsCard
-            title="Refund Orders"
-            value={stats.refundOrders}
-            icon="↩️"
-            color="red"
-            onClick={() => setModalOpen("refund")}
-            clickable
           />
         </div>
       </div>
@@ -305,48 +228,20 @@ export default function DashboardPage() {
             value={`${stats.totalWeight} kg`}
             icon="⚖️"
             color="purple"
-            onClick={() => setModalOpen("weight")}
+            onClick={() => setWeightModalOpen(true)}
             clickable
           />
         </div>
       </div>
 
-      {/* Modals */}
-      {modalOpen === "current" && (
-        <OrderIdsModal
-          title="Current Orders"
-          orderIds={orderIds.current}
-          onClose={() => setModalOpen(null)}
-        />
-      )}
-      {modalOpen === "pending" && (
-        <OrderIdsModal
-          title="Pending Orders"
-          orderIds={orderIds.pending}
-          onClose={() => setModalOpen(null)}
-        />
-      )}
-      {modalOpen === "delivered" && (
-        <OrderIdsModal
-          title="Delivered Orders"
-          orderIds={orderIds.delivered}
-          onClose={() => setModalOpen(null)}
-        />
-      )}
-      {modalOpen === "refund" && (
-        <OrderIdsModal
-          title="Refund Orders"
-          orderIds={orderIds.refund}
-          onClose={() => setModalOpen(null)}
-        />
-      )}
-      {modalOpen === "weight" && (
+      {/* Weight Modal */}
+      {weightModalOpen && (
         <WeightBreakdownModal
           breakdown={weightBreakdown}
           totalWeight={stats.totalWeight}
-          onClose={() => setModalOpen(null)}
+          onClose={() => setWeightModalOpen(false)}
         />
       )}
     </div>
   );
-} 
+}
