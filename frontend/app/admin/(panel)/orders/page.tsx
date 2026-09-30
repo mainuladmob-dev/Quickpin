@@ -17,6 +17,16 @@ import StatusChangeModal, {
 
 const PAGE_SIZE = 20;
 
+interface StatusCounts {
+  all: number;
+  current: number;
+  out_for_delivery: number;
+  delivered: number;
+  refund: number;
+  pending: number;
+  spam: number;
+}
+
 export default function OrdersPage() {
   const supabase = useMemo(() => createClient(), []);
 
@@ -37,6 +47,17 @@ export default function OrdersPage() {
   const [hasMore, setHasMore] = useState(false);
   const [page, setPage] = useState(0);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Counts
+  const [counts, setCounts] = useState<StatusCounts>({
+    all: 0,
+    current: 0,
+    out_for_delivery: 0,
+    delivered: 0,
+    refund: 0,
+    pending: 0,
+    spam: 0,
+  });
 
   // Bulk Print
   const [bulkPrintOrders, setBulkPrintOrders] = useState<OrderData[] | null>(
@@ -77,6 +98,64 @@ export default function OrdersPage() {
 
     return null;
   }, [dateRange, customStart, customEnd]);
+
+  // ===== Fetch Status Counts =====
+  const fetchCounts = useCallback(async () => {
+    const range = getDateRange();
+
+    let query = supabase.from("orders").select(
+      "id, order_status, payment_status, refund_amount"
+    );
+
+    if (range) {
+      query = query
+        .gte("created_at", range.start)
+        .lte("created_at", range.end);
+    }
+
+    const { data, error } = await query;
+
+    if (error || !data) {
+      console.error("Counts fetch error:", error);
+      return;
+    }
+
+    const all = data.filter(
+      (o: any) => o.payment_status === "success"
+    ).length;
+    const current = data.filter(
+      (o: any) =>
+        o.payment_status === "success" && o.order_status === "current"
+    ).length;
+    const ofd = data.filter(
+      (o: any) =>
+        o.payment_status === "success" &&
+        o.order_status === "out_for_delivery"
+    ).length;
+    const delivered = data.filter(
+      (o: any) =>
+        o.payment_status === "success" && o.order_status === "delivered"
+    ).length;
+    const refund = data.filter(
+      (o: any) => (Number(o.refund_amount) || 0) > 0
+    ).length;
+    const pending = data.filter(
+      (o: any) => o.payment_status === "pending"
+    ).length;
+    const spam = data.filter(
+      (o: any) => o.order_status === "spam"
+    ).length;
+
+    setCounts({
+      all,
+      current,
+      out_for_delivery: ofd,
+      delivered,
+      refund,
+      pending,
+      spam,
+    });
+  }, [supabase, getDateRange]);
 
   const buildQuery = useCallback(() => {
     let query = supabase.from("orders").select(
@@ -120,6 +199,9 @@ export default function OrdersPage() {
       query = query.gt("refund_amount", 0);
     } else if (orderStatus !== "all") {
       query = query.eq("order_status", orderStatus);
+    } else {
+      // "all" → শুধু successful orders
+      query = query.eq("payment_status", "success");
     }
 
     if (orderType !== "all") {
@@ -226,7 +308,8 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [fetchOrders]);
+    fetchCounts();
+  }, [fetchOrders, fetchCounts]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) =>
@@ -257,6 +340,7 @@ export default function OrdersPage() {
 
     setStatusChangeIds(null);
     await fetchOrders();
+    await fetchCounts();
   };
 
   const handleDelete = async (order: OrderData) => {
@@ -279,6 +363,7 @@ export default function OrdersPage() {
     }
 
     await fetchOrders();
+    await fetchCounts();
   };
 
   const handleBulkDelete = async () => {
@@ -308,11 +393,10 @@ export default function OrdersPage() {
     }
 
     await fetchOrders();
+    await fetchCounts();
   };
 
-  // ✅ Bulk Print Selected Orders
   const handleBulkPrintSelected = () => {
-    // Get selected orders from current list
     const selectedOrders = orders.filter((o) =>
       selectedIds.includes(o.id)
     );
@@ -322,7 +406,6 @@ export default function OrdersPage() {
       return;
     }
 
-    // Filter out pending and spam orders
     const printableOrders = selectedOrders.filter(
       (o) =>
         o.order_status !== "pending" && o.order_status !== "spam"
@@ -335,21 +418,8 @@ export default function OrdersPage() {
       return;
     }
 
-    // Show modal with selected orders
     setBulkPrintOrders(printableOrders);
   };
-
-  const stats = useMemo(() => {
-    return {
-      total: orders.length,
-      pending: orders.filter((o) => o.order_status === "pending").length,
-      current: orders.filter((o) => o.order_status === "current").length,
-      ofd: orders.filter((o) => o.order_status === "out_for_delivery").length,
-      delivered: orders.filter((o) => o.order_status === "delivered").length,
-      refund: orders.filter((o) => (o.refund_amount || 0) > 0).length,
-      spam: orders.filter((o) => o.order_status === "spam").length,
-    };
-  }, [orders]);
 
   const isSearchActive = searchQuery.trim().length > 0;
 
@@ -401,40 +471,8 @@ export default function OrdersPage() {
           setOrderStatus={setOrderStatus}
           orderType={orderType}
           setOrderType={setOrderType}
+          counts={counts}
         />
-      )}
-
-      {/* Stats Summary */}
-      {!loading && orders.length > 0 && !isSearchActive && (
-        <div className="flex items-center gap-2 text-xs text-gray-500 bg-white rounded-xl px-4 py-2 border border-gray-100 overflow-x-auto">
-          <span className="whitespace-nowrap">
-            Total: <strong className="text-gray-800">{stats.total}</strong>
-          </span>
-          <span className="text-gray-300">•</span>
-          <span className="whitespace-nowrap">
-            ⏳ Pending:{" "}
-            <strong className="text-amber-600">{stats.pending}</strong>
-          </span>
-          <span className="text-gray-300">•</span>
-          <span className="whitespace-nowrap">
-            🔵 Current:{" "}
-            <strong className="text-blue-600">{stats.current}</strong>
-          </span>
-          <span className="text-gray-300">•</span>
-          <span className="whitespace-nowrap">
-            🚚 OFD: <strong className="text-purple-600">{stats.ofd}</strong>
-          </span>
-          <span className="text-gray-300">•</span>
-          <span className="whitespace-nowrap">
-            ✅ Delivered:{" "}
-            <strong className="text-green-600">{stats.delivered}</strong>
-          </span>
-          <span className="text-gray-300">•</span>
-          <span className="whitespace-nowrap">
-            ↩️ Refund:{" "}
-            <strong className="text-yellow-600">{stats.refund}</strong>
-          </span>
-        </div>
       )}
 
       {/* Select All Bar */}
@@ -534,7 +572,6 @@ export default function OrdersPage() {
               {selectedIds.length} selected:
             </span>
 
-            {/* ✅ NEW: Bulk Print Button */}
             <button
               onClick={handleBulkPrintSelected}
               className="text-xs font-semibold bg-purple-600 hover:bg-purple-700 text-white px-3 py-2 rounded-lg whitespace-nowrap transition"
@@ -580,7 +617,10 @@ export default function OrdersPage() {
         <RefundModal
           order={refundOrder}
           onClose={() => setRefundOrder(null)}
-          onSuccess={fetchOrders}
+          onSuccess={() => {
+            fetchOrders();
+            fetchCounts();
+          }}
         />
       )}
 
@@ -612,20 +652,15 @@ export default function OrdersPage() {
               <h3 className="text-sm font-bold text-gray-900">
                 📸 Payment Screenshot
               </h3>
-             <button
-  onClick={() => setScreenshotUrl(null)}
-  className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
->
-  ×
-</button>
+              <button
+                onClick={() => setScreenshotUrl(null)}
+                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 text-xl"
+              >
+                ×
+              </button>
             </div>
-            <div className="p-4">
-              <img
-                src={screenshotUrl}
-                alt="Payment screenshot"
-                className="max-w-full max-h-[70vh] object-contain mx-auto rounded-lg"
-              />
-            </div>
+            <div
+           </div>
           </div>
         </div>
       )}
