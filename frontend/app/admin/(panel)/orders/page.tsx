@@ -103,9 +103,9 @@ export default function OrdersPage() {
   const fetchCounts = useCallback(async () => {
     const range = getDateRange();
 
-    let query = supabase.from("orders").select(
-      "id, order_status, payment_status, refund_amount"
-    );
+    let query = supabase
+      .from("orders")
+      .select("id, order_status, payment_status, refund_amount");
 
     if (range) {
       query = query
@@ -142,9 +142,7 @@ export default function OrdersPage() {
     const pending = data.filter(
       (o: any) => o.payment_status === "pending"
     ).length;
-    const spam = data.filter(
-      (o: any) => o.order_status === "spam"
-    ).length;
+    const spam = data.filter((o: any) => o.order_status === "spam").length;
 
     setCounts({
       all,
@@ -407,8 +405,7 @@ export default function OrdersPage() {
     }
 
     const printableOrders = selectedOrders.filter(
-      (o) =>
-        o.order_status !== "pending" && o.order_status !== "spam"
+      (o) => o.order_status !== "pending" && o.order_status !== "spam"
     );
 
     if (printableOrders.length === 0) {
@@ -659,8 +656,14 @@ export default function OrdersPage() {
                 ×
               </button>
             </div>
-            <div
-           </div>
+            <div className="p-4">
+                        <img
+                  src={screenshotUrl}
+                  alt="Payment screenshot"
+                  className="max-w-full max-h-[70vh] object-contain mx-auto rounded-lg"
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
