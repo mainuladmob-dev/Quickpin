@@ -256,6 +256,12 @@ export default function OrderCard({
                 >
                   🚫 Spam
                 </button>
+                <button
+                  onClick={() => onPrint(order)}
+                  className="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition"
+                >
+                  🖨️ Print
+                </button>
               </>
             )}
 
@@ -325,6 +331,12 @@ export default function OrderCard({
                   className="text-xs font-semibold bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg transition"
                 >
                   🗑️ Delete
+                </button>
+                <button
+                  onClick={() => onPrint(order)}
+                  className="text-xs font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition"
+                >
+                  🖨️ Print
                 </button>
               </>
             )}
