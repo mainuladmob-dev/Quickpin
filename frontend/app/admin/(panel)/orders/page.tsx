@@ -1,4 +1,4 @@
-"use client";
+।"use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -620,7 +620,7 @@ export default function OrdersPage() {
 
       {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
-        currentStatus={(() => {
+currentStatus={(() => {
   const selectedOrders = orders.filter((o) =>
     statusChangeIds.includes(o.id)
   );
