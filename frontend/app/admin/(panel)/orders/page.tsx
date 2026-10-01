@@ -680,12 +680,17 @@ export default function OrdersPage() {
       {statusChangeIds && (
         <StatusChangeModal
           orderIds={statusChangeIds}
-          currentStatus={
-            statusChangeIds.length === 1
-              ? (orders.find((o) => o.id === statusChangeIds[0])
-                  ?.order_status as OrderStatus)
-              : undefined
-          }
+          currentStatus={(() => {
+  const selectedOrders = orders.filter((o) =>
+    statusChangeIds.includes(o.id)
+  );
+  if (selectedOrders.length === 0) return undefined;
+  const firstStatus = selectedOrders[0].order_status;
+  const allSame = selectedOrders.every(
+    (o) => o.order_status === firstStatus
+  );
+  return allSame ? (firstStatus as OrderStatus) : undefined;
+})()}
           onClose={() => setStatusChangeIds(null)}
           onConfirm={handleStatusChange}
         />
