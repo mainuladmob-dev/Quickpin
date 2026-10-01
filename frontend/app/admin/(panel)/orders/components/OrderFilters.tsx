@@ -7,7 +7,6 @@ export type OrderStatusFilter =
   | "current"
   | "out_for_delivery"
   | "delivered"
-  | "refund"
   | "pending"
   | "spam";
 
@@ -23,7 +22,6 @@ interface StatusCounts {
   current: number;
   out_for_delivery: number;
   delivered: number;
-  refund: number;
   pending: number;
   spam: number;
 }
@@ -76,12 +74,6 @@ export default function OrderFilters({
       color: "green",
     },
     {
-      value: "refund",
-      label: "↩️ Refunded",
-      count: counts.refund,
-      color: "yellow",
-    },
-    {
       value: "pending",
       label: "Pending",
       count: counts.pending,
@@ -110,10 +102,6 @@ export default function OrderFilters({
       },
       green: {
         active: "bg-green-600 text-white border-green-600 shadow-sm",
-        badge: "bg-white/25 text-white",
-      },
-      yellow: {
-        active: "bg-yellow-500 text-white border-yellow-500 shadow-sm",
         badge: "bg-white/25 text-white",
       },
       amber: {
@@ -255,4 +243,4 @@ export default function OrderFilters({
       </div>
     </div>
   );
-} 
+}
