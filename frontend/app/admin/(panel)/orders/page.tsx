@@ -141,14 +141,13 @@ export default function OrdersPage() {
     ).length;
 
     setCounts({
-      all: 0,
-      current,
-      out_for_delivery: ofd,
-      delivered,
-      refund,
-      pending,
-      spam,
-    });
+  all,
+  current,
+  out_for_delivery: ofd,
+  delivered,
+  pending,
+  spam,
+});
   }, [supabase, getDateRange]);
 
   const buildQuery = useCallback(() => {
