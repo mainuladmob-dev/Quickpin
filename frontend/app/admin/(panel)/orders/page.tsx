@@ -220,16 +220,14 @@ const fetchCounts = useCallback(async () => {
     } else if (orderStatus !== "all") {
         query = query.eq("order_status", orderStatus);
 }
-
 if (orderType !== "all") {
-      const [paymentPart, deliveryPart] = orderType.split("_");
-      query = query.eq("payment_type", paymentPart);
-      query = query.eq(
-        "delivery_type",
-        deliveryPart === "home" ? "home_delivery" : "self_pickup"
-      );
-    }
-
+  const [paymentPart, deliveryPart] = orderType.split("_");
+  query = query.eq("payment_type", paymentPart);
+  query = query.eq(
+    "delivery_type",
+    deliveryPart === "home" ? "home_delivery" : "self_pickup"
+  );
+}
     return query;
   }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
 
