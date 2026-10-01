@@ -232,6 +232,8 @@ const fetchCounts = useCallback(async () => {
 
   return query;
 }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
+    const transformOrder = (o: any): OrderData => {
+  const addr = o.delivery_address_snapshot || null;
     const phoneFromAddr = addr?.phone || null;
 
     return {
