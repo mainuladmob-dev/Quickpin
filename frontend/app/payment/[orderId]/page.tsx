@@ -148,9 +148,6 @@ export default function PaymentPage() {
 
   return urlData.publicUrl;
 };
-    }
-    return fileName;
-  };
 
   const handleSubmitScreenshot = async () => {
     if (!order || !screenshot) {
