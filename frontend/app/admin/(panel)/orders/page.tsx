@@ -192,10 +192,8 @@ export default function OrdersPage() {
       }
     }
 
-    if (orderStatus === "refund") {
-      query = query.gt("refund_amount", 0);
-    } else if (orderStatus !== "all") {
-      query = query.eq("order_status", orderStatus);
+    if (orderStatus !== "all") {
+  query = query.eq("order_status", orderStatus);
     }
     // ✅ "all" হলে কোনো filter নেই — সব order দেখাবে
 
