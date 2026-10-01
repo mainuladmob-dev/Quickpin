@@ -116,36 +116,27 @@ export default function GSTReportsPage() {
       return;
     }
 
-    // ===== Successful = payment_status === "success" =====
-    const successful = orders.filter(
-      (o: any) => o.payment_status === "success"
+    // ===== Delivered orders (payment success + order delivered) =====
+    const delivered = orders.filter(
+      (o: any) =>
+        o.payment_status === "success" && o.order_status === "delivered"
     );
 
-    // ===== Delivered = order_status === "delivered" =====
-    const delivered = successful.filter(
-      (o: any) => o.order_status === "delivered"
-    );
+    // ===== Net Sales = sum(total_amount − refund_amount) =====
+    const netSalesTotal = delivered.reduce((sum: number, o: any) => {
+      const total = Number(o.total_amount) || 0;
+      const refund = Number(o.refund_amount) || 0;
+      return sum + (total - refund);
+    }, 0);
 
-    // ===== Refunded = refund_amount > 0 =====
-    const refunded = orders.filter(
-      (o: any) => (Number(o.refund_amount) || 0) > 0
-    );
-
-    // ===== Net Delivered = Delivered − Refunded =====
-    const netDelivered = delivered.filter(
-      (d: any) => !refunded.some((r: any) => r.id === d.id)
-    );
-
-    // ===== Net Sales =====
-    const netSalesTotal = netDelivered.reduce(
-      (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
-      0
-    );
-
-    // ===== HSN-wise Product Calculation =====
+    // ===== HSN-wise Product Calculation (net of refund ratio) =====
     const hsnMap: Record<string, HSNItem> = {};
 
-    netDelivered.forEach((order: any) => {
+    delivered.forEach((order: any) => {
+      const orderTotal = Number(order.total_amount) || 0;
+      const orderRefund = Number(order.refund_amount) || 0;
+      const refundRatio = orderTotal > 0 ? orderRefund / orderTotal : 0;
+
       (order.order_items || []).forEach((item: any) => {
         const product = item.products;
         if (!product) return;
@@ -153,10 +144,11 @@ export default function GSTReportsPage() {
         const hsn = product.hsn_code || "UNKNOWN";
         const gstPercent = Number(product.gst_percentage) || 0;
         const itemTotal = item.qty * Number(item.price);
+        const netItemTotal = itemTotal * (1 - refundRatio);
 
         // GST Inclusive → Extract Base + GST
-        const basePrice = itemTotal / (1 + gstPercent / 100);
-        const gstAmount = itemTotal - basePrice;
+        const basePrice = netItemTotal / (1 + gstPercent / 100);
+        const gstAmount = netItemTotal - basePrice;
 
         const key = `${hsn}-${product.name_en}-${gstPercent}`;
 
@@ -171,7 +163,7 @@ export default function GSTReportsPage() {
           };
         }
 
-        hsnMap[key].net_sales += itemTotal;
+        hsnMap[key].net_sales += netItemTotal;
         hsnMap[key].gst_amount += gstAmount;
         hsnMap[key].qty += Number(item.qty) || 0;
       });
@@ -188,7 +180,7 @@ export default function GSTReportsPage() {
     );
 
     // ===== Delivery Calculation =====
-    const homeDelivered = netDelivered.filter(
+    const homeDelivered = delivered.filter(
       (o: any) => o.delivery_type === "home_delivery"
     );
 
@@ -401,4 +393,4 @@ export default function GSTReportsPage() {
       )}
     </div>
   );
-            }
+                }
