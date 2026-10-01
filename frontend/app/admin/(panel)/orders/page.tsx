@@ -322,22 +322,89 @@ export default function OrdersPage() {
   };
 
   const handleStatusChange = async (newStatus: OrderStatus) => {
-    if (!statusChangeIds || statusChangeIds.length === 0) return;
+  if (!statusChangeIds || statusChangeIds.length === 0) return;
 
-    const { error } = await supabase
-      .from("orders")
-      .update({
-        order_status: newStatus,
-        status_changed_at: new Date().toISOString(),
-      })
-      .in("id", statusChangeIds);
+  try {
+    if (newStatus === "current") {
+      // Pending → Current: payment_status = success
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "current",
+          payment_status: "success",
+          status_changed_at: new Date().toISOString(),
+        })
+        .in("id", statusChangeIds);
 
-    if (error) throw error;
+      if (error) throw error;
+    } else if (newStatus === "delivered") {
+      // OFD → Delivered: paid = total, remaining = 0
+      const { data: ordersData, error: fetchErr } = await supabase
+        .from("orders")
+        .select("id, total_amount")
+        .in("id", statusChangeIds);
+
+      if (fetchErr || !ordersData) throw fetchErr;
+
+      for (const ord of ordersData) {
+        const { error: updErr } = await supabase
+          .from("orders")
+          .update({
+            order_status: "delivered",
+            payment_status: "success",
+            paid_amount: ord.total_amount,
+            remaining_amount: 0,
+            status_changed_at: new Date().toISOString(),
+          })
+          .eq("id", ord.id);
+
+        if (updErr) throw updErr;
+      }
+    } else if (newStatus === "spam") {
+      // → Spam: payment_status = pending
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "spam",
+          payment_status: "pending",
+          status_changed_at: new Date().toISOString(),
+        })
+        .in("id", statusChangeIds);
+
+      if (error) throw error;
+    } else if (newStatus === "pending") {
+      // Spam → Pending (Restore)
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: "pending",
+          payment_status: "pending",
+          status_changed_at: new Date().toISOString(),
+        })
+        .in("id", statusChangeIds);
+
+      if (error) throw error;
+    } else {
+      // Current → OFD: কিছুই পরিবর্তন না
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          order_status: newStatus,
+          status_changed_at: new Date().toISOString(),
+        })
+        .in("id", statusChangeIds);
+
+      if (error) throw error;
+    }
 
     setStatusChangeIds(null);
     await fetchOrders();
     await fetchCounts();
-  };
+  } catch (err: any) {
+    console.error("Status change error:", err);
+    throw err;
+  }
+};
 
   const handleDelete = async (order: OrderData) => {
     if (
