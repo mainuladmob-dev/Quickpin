@@ -5,7 +5,9 @@ import { useState } from "react";
 interface OrderIdItem {
   id: string;
   amount: number;
+  gst?: number;
   refund?: number;
+  refundGST?: number;
   netAmount?: number;
 }
 
@@ -45,8 +47,22 @@ export default function OrderIdsModal({
     }
   };
 
+  const isNetSales = title === "Net Sales";
+  const isRefund = title === "Refund";
+  const isGross = title === "Gross Sales";
+
   const totalAmount = orderIds.reduce(
     (sum, item) => sum + (item.amount || 0),
+    0
+  );
+
+  const totalGST = orderIds.reduce(
+    (sum, item) => sum + (item.gst || 0),
+    0
+  );
+
+  const totalRefundGST = orderIds.reduce(
+    (sum, item) => sum + (item.refundGST || 0),
     0
   );
 
@@ -55,7 +71,12 @@ export default function OrderIdsModal({
     0
   );
 
-  const isNetSales = title === "Net Sales";
+  const totalNetGST = orderIds.reduce((sum, item) => {
+    if (isNetSales) {
+      return sum + ((item.gst || 0) - (item.refundGST || 0));
+    }
+    return sum + (item.gst || 0);
+  }, 0);
 
   return (
     <div
@@ -63,7 +84,7 @@ export default function OrderIdsModal({
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[80vh] flex flex-col"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -83,6 +104,18 @@ export default function OrderIdsModal({
                 </span>
               )}
             </p>
+            {/* GST Summary */}
+            {!isDelivery && totalGST > 0 && (
+              <p className="text-xs text-amber-600 mt-1 font-medium">
+                GST: ₹{totalGST.toFixed(2)}
+                {isNetSales && totalRefundGST > 0 && (
+                  <span className="text-red-500 ml-1">
+                    − Refund ₹{totalRefundGST.toFixed(2)} = ₹
+                    {totalNetGST.toFixed(2)}
+                  </span>
+                )}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -128,18 +161,16 @@ export default function OrderIdsModal({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 ml-2">
-                    {!isNetSales && item.amount > 0 && (
-                      <span className="text-sm font-bold text-gray-700">
-                        ₹{item.amount.toLocaleString("en-IN")}
-                      </span>
-                    )}
-                    {isNetSales && (
+                    {isNetSales ? (
                       <span className="text-sm font-bold text-blue-700">
-                        ₹
-                        {(item.netAmount ?? item.amount).toLocaleString(
-                          "en-IN"
-                        )}
+                        ₹{(item.netAmount ?? item.amount).toLocaleString("en-IN")}
                       </span>
+                    ) : (
+                      item.amount > 0 && (
+                        <span className="text-sm font-bold text-gray-700">
+                          ₹{item.amount.toLocaleString("en-IN")}
+                        </span>
+                      )
                     )}
                     <button
                       onClick={() => handleCopy(item.id)}
@@ -154,20 +185,48 @@ export default function OrderIdsModal({
                   </div>
                 </div>
 
-                {/* Net Sales Breakdown */}
-                {isNetSales && (item.refund || 0) > 0 && (
-                  <div className="mt-1.5 pl-8 flex items-center gap-3 text-xs">
-                    <span className="text-gray-500">
-                      Gross: ₹{item.amount.toLocaleString("en-IN")}
-                    </span>
-                    <span className="text-red-500">
-                      Refund: −₹
-                      {(item.refund || 0).toLocaleString("en-IN")}
-                    </span>
-                    <span className="text-green-600 font-semibold">
-                      Net: ₹
-                      {(item.netAmount ?? item.amount).toLocaleString("en-IN")}
-                    </span>
+                {/* GST + breakdown */}
+                {!isDelivery && (
+                  <div className="mt-1.5 pl-8 flex items-center gap-3 text-xs flex-wrap">
+                    {isGross && item.gst !== undefined && item.gst > 0 && (
+                      <span className="text-amber-600">
+                        GST: ₹{item.gst.toFixed(2)}
+                      </span>
+                    )}
+                    {isRefund && item.gst !== undefined && item.gst > 0 && (
+                      <span className="text-amber-600">
+                        GST Refunded: ₹{item.gst.toFixed(2)}
+                      </span>
+                    )}
+                    {isNetSales && (
+                      <>
+                        <span className="text-gray-500">
+                          Gross: ₹{item.amount.toLocaleString("en-IN")}
+                        </span>
+                        <span className="text-red-500">
+                          Refund: −₹
+                          {(item.refund || 0).toLocaleString("en-IN")}
+                        </span>
+                        <span className="text-green-600 font-semibold">
+                          Net: ₹
+                          {(item.netAmount ?? item.amount).toLocaleString(
+                            "en-IN"
+                          )}
+                        </span>
+                        {item.gst !== undefined && item.gst > 0 && (
+                          <span className="text-amber-600">
+                            GST: ₹{item.gst.toFixed(2)}
+                            {item.refundGST && item.refundGST > 0 && (
+                              <span className="text-red-500">
+                                {" "}
+                                − ₹{item.refundGST.toFixed(2)} = ₹
+                                {(item.gst - item.refundGST).toFixed(2)}
+                              </span>
+                            )}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -177,4 +236,4 @@ export default function OrderIdsModal({
       </div>
     </div>
   );
-}
+              }
