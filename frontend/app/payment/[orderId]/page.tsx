@@ -131,14 +131,23 @@ export default function PaymentPage() {
   };
 
   const uploadScreenshot = async (file: File): Promise<string | null> => {
-    const ext = file.name.split(".").pop();
-    const fileName = `${order?.order_number}-${Date.now()}.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from("payment-screenshots")
-      .upload(fileName, file);
-    if (upErr) {
-      setError("Upload failed: " + upErr.message);
-      return null;
+  const ext = file.name.split(".").pop();
+  const fileName = `${order?.order_number}-${Date.now()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("payment-screenshots")
+    .upload(fileName, file);
+  if (upErr) {
+    setError("Upload failed: " + upErr.message);
+    return null;
+  }
+
+  // ✅ Full public URL return করুন
+  const { data: urlData } = supabase.storage
+    .from("payment-screenshots")
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
+};
     }
     return fileName;
   };
