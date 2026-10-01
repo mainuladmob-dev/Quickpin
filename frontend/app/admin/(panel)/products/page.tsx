@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { uploadProductImage } from "@/lib/upload-image";
 
 interface Category {
   id: string;
