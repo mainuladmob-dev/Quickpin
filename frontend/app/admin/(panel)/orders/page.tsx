@@ -22,7 +22,6 @@ interface StatusCounts {
   current: number;
   out_for_delivery: number;
   delivered: number;
-  refund: number;
   pending: number;
   spam: number;
 }
@@ -54,7 +53,6 @@ export default function OrdersPage() {
     current: 0,
     out_for_delivery: 0,
     delivered: 0,
-    refund: 0,
     pending: 0,
     spam: 0,
   });
