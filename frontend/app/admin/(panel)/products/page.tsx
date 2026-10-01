@@ -599,7 +599,6 @@ export default function ProductsPage() {
                     setFormData({ ...formData, name_bn: e.target.value })
                   }
                   placeholder="আলু"
-                  className="w-full p
                   className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
