@@ -176,17 +176,6 @@ const fetchCounts = useCallback(async () => {
   });
 }, [supabase, getDateRange]);
 
-    setCounts({
-      all,
-      current,
-      out_for_delivery: ofd,
-      delivered,
-      refund,
-      pending,
-      spam,
-    });
-  }, [supabase, getDateRange]);
-
   const buildQuery = useCallback(() => {
     let query = supabase.from("orders").select(
       `
