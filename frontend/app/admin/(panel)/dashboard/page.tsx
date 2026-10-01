@@ -11,6 +11,8 @@ type DateRange = "today" | "yesterday" | "custom" | "all";
 interface OrderIdItem {
   id: string;
   amount: number;
+  refund?: number;
+  netAmount?: number;
 }
 
 export default function DashboardPage() {
@@ -113,14 +115,10 @@ export default function DashboardPage() {
       return;
     }
 
-    // ===== Successful = payment_status === "success" =====
-    const successful = orders.filter(
-      (o: any) => o.payment_status === "success"
-    );
-
-    // ===== Delivered = order_status === "delivered" =====
-    const delivered = successful.filter(
-      (o: any) => o.order_status === "delivered"
+    // ===== Delivered orders (payment success + order delivered) =====
+    const delivered = orders.filter(
+      (o: any) =>
+        o.payment_status === "success" && o.order_status === "delivered"
     );
 
     // ===== Refunded = refund_amount > 0 =====
@@ -128,7 +126,7 @@ export default function DashboardPage() {
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Home Delivered = delivery_type === "home_delivery" =====
+    // ===== Home Delivered =====
     const homeDelivered = delivered.filter(
       (o: any) => o.delivery_type === "home_delivery"
     );
@@ -145,33 +143,39 @@ export default function DashboardPage() {
       0
     );
 
-    // ===== Delivery Charge =====
+    // ===== Delivery =====
     const deliveryCharge = homeDelivered.reduce(
       (sum: number, o: any) => sum + (Number(o.delivery_charge) || 0),
       0
     );
-
     const deliveryGST = deliveryCharge * 0.18;
     const deliveryTotal = deliveryCharge + deliveryGST;
 
-    // ===== Order IDs Arrays =====
+    // ===== Gross IDs =====
     const grossIdsArr: OrderIdItem[] = delivered.map((o: any) => ({
       id: o.order_number || `#${o.id.slice(0, 8)}`,
       amount: Number(o.total_amount) || 0,
     }));
 
+    // ===== Refund IDs =====
     const refundIdsArr: OrderIdItem[] = refunded.map((o: any) => ({
       id: o.order_number || `#${o.id.slice(0, 8)}`,
       amount: Number(o.refund_amount) || 0,
     }));
 
-    const netIdsArr: OrderIdItem[] = delivered
-      .filter((d: any) => !refunded.some((r: any) => r.id === d.id))
-      .map((o: any) => ({
+    // ✅ Net IDs — সব delivered order (refund থাকুক বা না থাকুক)
+    const netIdsArr: OrderIdItem[] = delivered.map((o: any) => {
+      const total = Number(o.total_amount) || 0;
+      const refund = Number(o.refund_amount) || 0;
+      return {
         id: o.order_number || `#${o.id.slice(0, 8)}`,
-        amount: Number(o.total_amount) || 0,
-      }));
+        amount: total,
+        refund: refund,
+        netAmount: total - refund,
+      };
+    });
 
+    // ===== Delivery IDs =====
     const deliveryIdsArr: OrderIdItem[] = homeDelivered.map((o: any) => ({
       id: o.order_number || `#${o.id.slice(0, 8)}`,
       amount: Number(o.delivery_charge) || 0,
