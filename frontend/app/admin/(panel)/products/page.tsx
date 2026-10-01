@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { uploadProductImage } from "@/lib/upload-image";
 
 interface Category {
   id: string;
@@ -18,19 +19,9 @@ interface Product {
   stock: number;
   is_active: boolean;
   category_id: string | null;
-  gst_percentage: number;
-  hsn_code: string | null;
   images: string[] | null;
   categories?: { name_en: string }[] | null;
 }
-
-const GST_RATES = [
-  { value: 0, label: "0% (Fresh/Exempt)" },
-  { value: 5, label: "5% (Packaged food)" },
-  { value: 12, label: "12% (Processed)" },
-  { value: 18, label: "18% (General)" },
-  { value: 28, label: "28% (Luxury)" },
-];
 
 export default function ProductsPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -55,9 +46,11 @@ export default function ProductsPage() {
     stock: "",
     is_active: true,
     category_id: "",
-    gst_percentage: "0",
-    hsn_code: "",
   });
+
+  // ✅ Image state (এটাই হারিয়ে গেছিল)
+  const [images, setImages] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +60,7 @@ export default function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name_en, name_bn, price, weight, stock, is_active, category_id, gst_percentage, hsn_code, images, categories(name_en)"
+        "id, name_en, name_bn, price, weight, stock, is_active, category_id, images, categories(name_en)"
       )
       .order("created_at", { ascending: false });
 
@@ -108,9 +101,8 @@ export default function ProductsPage() {
       stock: "",
       is_active: true,
       category_id: "",
-      gst_percentage: "0",
-      hsn_code: "",
     });
+    setImages([]); // ✅ reset images
     setError("");
     setShowModal(true);
   };
@@ -125,11 +117,38 @@ export default function ProductsPage() {
       stock: String(product.stock || ""),
       is_active: product.is_active,
       category_id: product.category_id || "",
-      gst_percentage: String(product.gst_percentage || 0),
-      hsn_code: product.hsn_code || "",
     });
+    setImages(product.images || []); // ✅ existing images লোড
     setError("");
     setShowModal(true);
+  };
+
+  // ✅ Image upload handler
+  const handleImageUpload = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploading(true);
+    const uploaded: string[] = [];
+
+    for (const file of Array.from(files)) {
+      if (file.size > 2 * 1024 * 1024) {
+        alert(`${file.name} — 2MB এর বেশি, স্কিপ করা হলো`);
+        continue;
+      }
+      const url = await uploadProductImage(file);
+      if (url) uploaded.push(url);
+    }
+
+    setImages((prev) => [...prev, ...uploaded]);
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const removeImage = (index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSave = async () => {
@@ -161,8 +180,7 @@ export default function ProductsPage() {
       stock: Number(formData.stock) || 0,
       is_active: formData.is_active,
       category_id: formData.category_id,
-      gst_percentage: Number(formData.gst_percentage) || 0,
-      hsn_code: formData.hsn_code.trim() || null,
+      images, // ✅ images save
     };
 
     try {
@@ -364,21 +382,11 @@ export default function ProductsPage() {
                     Stock: {product.stock}
                   </span>
                 </div>
-                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                  {product.categories?.[0]?.name_en && (
-                    <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                      📂 {product.categories[0].name_en}
-                    </span>
-                  )}
-                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
-                    GST: {product.gst_percentage || 0}%
+                {product.categories?.[0]?.name_en && (
+                  <span className="inline-block mt-1.5 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                    📂 {product.categories[0].name_en}
                   </span>
-                  {product.hsn_code && (
-                    <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full font-medium font-mono">
-                      HSN: {product.hsn_code}
-                    </span>
-                  )}
-                </div>
+                )}
               </div>
 
               {/* Actions */}
@@ -434,7 +442,7 @@ export default function ProductsPage() {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Category */}
+              {/* Category Dropdown */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   📂 Category *
@@ -463,6 +471,58 @@ export default function ProductsPage() {
                     ))}
                   </select>
                 )}
+              </div>
+
+              {/* ✅ Product Images (হারিয়ে যাওয়া অংশ) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  🖼️ Product Images
+                </label>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  disabled={uploading}
+                  className="block w-full text-xs file:mr-3 file:py-2 file:px-3
+                             file:rounded-lg file:border-0 file:bg-blue-600
+                             file:text-white file:text-xs file:font-semibold
+                             hover:file:bg-blue-700 file:cursor-pointer
+                             border border-gray-200 rounded-xl"
+                />
+
+                {uploading && (
+                  <p className="text-xs text-blue-600 mt-2">⏳ Uploading...</p>
+                )}
+
+                {images.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2 mt-3">
+                    {images.map((url, i) => (
+                      <div key={i} className="relative group">
+                        <img
+                          src={url}
+                          alt={`img-${i}`}
+                          className="w-full h-20 object-cover rounded-lg border border-gray-200"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(i)}
+                          className="absolute top-1 right-1 bg-red-600 text-white
+                                     rounded-full w-5 h-5 text-[10px] font-bold
+                                     opacity-0 group-hover:opacity-100 transition
+                                     flex items-center justify-center"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-400 mt-1">
+                  Max 2MB / image • একাধিক select করা যাবে
+                </p>
               </div>
 
               <div>
@@ -527,50 +587,7 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* GST */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  📊 GST Percentage *
-                </label>
-                <select
-                  value={formData.gst_percentage}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      gst_percentage: e.target.value,
-                    })
-                  }
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                >
-                  {GST_RATES.map((rate) => (
-                    <option key={rate.value} value={rate.value}>
-                      {rate.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* HSN Code */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  🔢 HSN Code
-                </label>
-                <input
-                  type="text"
-                  value={formData.hsn_code}
-                  onChange={(e) =>
-                    setFormData({ ...formData, hsn_code: e.target.value })
-                  }
-                  placeholder="e.g. 0701, 1905, 3401"
-                  maxLength={8}
-                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  GSTR-1 Filing-এর জন্য HSN Code (4 বা 6 digit)
-                </p>
-              </div>
-
-              <div>
+                            <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Stock
                 </label>
@@ -581,7 +598,7 @@ export default function ProductsPage() {
                     setFormData({ ...formData, stock: e.target.value })
                   }
                   placeholder="100"
-                                    className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
 
