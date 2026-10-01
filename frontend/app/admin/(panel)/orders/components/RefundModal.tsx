@@ -71,20 +71,27 @@ export default function RefundModal({
         selectedItems.includes(item.id)
       );
 
-      // 2. Insert one row per product into refunds table
-      const refundRows = selectedProducts.map((item) => ({
-        order_id: order.id,
-        product_name: item.products?.name_en || "Product",
-        quantity: item.qty,
-        amount: item.qty * item.price,
-        weight_kg: item.products?.weight
-          ? item.qty * item.products.weight
-          : null,
-        refund_method: refundMethod,
-        reason: reason.trim() || null,
-        customer_upi: refundMethod === "upi" ? manualUpi.trim() : null,
-        refunded_at: new Date().toISOString(),
-      }));
+      // 2. Insert one row per product into refunds table (with GST)
+      const refundRows = selectedProducts.map((item) => {
+        const itemTotal = item.qty * item.price;
+        const gstPct = Number(item.products?.gst_percentage) || 0;
+        const gstAmount = itemTotal - itemTotal / (1 + gstPct / 100);
+
+        return {
+          order_id: order.id,
+          product_name: item.products?.name_en || "Product",
+          quantity: item.qty,
+          amount: itemTotal,
+          gst_amount: gstAmount,
+          weight_kg: item.products?.weight
+            ? item.qty * item.products.weight
+            : null,
+          refund_method: refundMethod,
+          reason: reason.trim() || null,
+          customer_upi: refundMethod === "upi" ? manualUpi.trim() : null,
+          refunded_at: new Date().toISOString(),
+        };
+      });
 
       const { error: refundErr } = await supabase
         .from("refunds")
@@ -301,4 +308,4 @@ export default function RefundModal({
       </div>
     </div>
   );
-}
+  }
