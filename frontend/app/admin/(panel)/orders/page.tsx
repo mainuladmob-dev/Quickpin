@@ -620,17 +620,7 @@ export default function OrdersPage() {
 
       {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
-currentStatus={(() => {
-  const selectedOrders = orders.filter((o) =>
-    statusChangeIds.includes(o.id)
-  );
-  if (selectedOrders.length === 0) return undefined;
-  const firstStatus = selectedOrders[0].order_status;
-  const allSame = selectedOrders.every(
-    (o) => o.order_status === firstStatus
-  );
-  return allSame ? (firstStatus as OrderStatus) : undefined;
-})()}
+
 
             <button
               onClick={handleBulkPrint}
