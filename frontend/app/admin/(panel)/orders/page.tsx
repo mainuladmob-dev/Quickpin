@@ -227,7 +227,6 @@ if (orderType !== "all") {
     "delivery_type",
     deliveryPart === "home" ? "home_delivery" : "self_pickup"
   );
-}
     return query;
   }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
 
