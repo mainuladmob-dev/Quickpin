@@ -613,7 +613,6 @@ const fetchCounts = useCallback(async () => {
             >
               ❌ Clear
             </button>
-          </div>
         </div>
       )}
 
