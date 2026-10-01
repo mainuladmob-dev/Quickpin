@@ -274,7 +274,6 @@ const fetchCounts = useCallback(async () => {
           }
         : null,
     };
-  };
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
