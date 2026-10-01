@@ -1,4 +1,5 @@
-।"use client";
+"use client";
+
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import OrderFilters, {
@@ -94,13 +95,13 @@ export default function OrdersPage() {
     return null;
   }, [dateRange, customStart, customEnd]);
 
-  // ===== Fetch Status Counts (শুধু order_status ভিত্তিতে) =====
+  // ===== Fetch Status Counts =====
   const fetchCounts = useCallback(async () => {
     const range = getDateRange();
 
     let query = supabase
       .from("orders")
-      .select("id, order_status, refund_amount");
+      .select("id, order_status");
 
     if (range) {
       query = query
@@ -114,6 +115,8 @@ export default function OrdersPage() {
       console.error("Counts fetch error:", error);
       return;
     }
+
+    const all = data.length;
 
     const pending = data.filter(
       (o: any) => o.order_status === "pending"
@@ -131,20 +134,18 @@ export default function OrdersPage() {
       (o: any) => o.order_status === "delivered"
     ).length;
 
-    const all = data.length;
-
     const spam = data.filter(
       (o: any) => o.order_status === "spam"
     ).length;
 
     setCounts({
-  all,
-  current,
-  out_for_delivery: ofd,
-  delivered,
-  pending,
-  spam,
-});
+      all,
+      current,
+      out_for_delivery: ofd,
+      delivered,
+      pending,
+      spam,
+    });
   }, [supabase, getDateRange]);
 
   const buildQuery = useCallback(() => {
@@ -187,9 +188,8 @@ export default function OrdersPage() {
     }
 
     if (orderStatus !== "all") {
-  query = query.eq("order_status", orderStatus);
+      query = query.eq("order_status", orderStatus);
     }
-    // ✅ "all" হলে কোনো filter নেই — সব order দেখাবে
 
     if (orderType !== "all") {
       const [paymentPart, deliveryPart] = orderType.split("_");
@@ -314,89 +314,84 @@ export default function OrdersPage() {
   };
 
   const handleStatusChange = async (newStatus: OrderStatus) => {
-  if (!statusChangeIds || statusChangeIds.length === 0) return;
+    if (!statusChangeIds || statusChangeIds.length === 0) return;
 
-  try {
-    if (newStatus === "current") {
-      // Pending → Current: payment_status = success
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: "current",
-          payment_status: "success",
-          status_changed_at: new Date().toISOString(),
-        })
-        .in("id", statusChangeIds);
-
-      if (error) throw error;
-    } else if (newStatus === "delivered") {
-      // OFD → Delivered: paid = total, remaining = 0
-      const { data: ordersData, error: fetchErr } = await supabase
-        .from("orders")
-        .select("id, total_amount")
-        .in("id", statusChangeIds);
-
-      if (fetchErr || !ordersData) throw fetchErr;
-
-      for (const ord of ordersData) {
-        const { error: updErr } = await supabase
+    try {
+      if (newStatus === "current") {
+        const { error } = await supabase
           .from("orders")
           .update({
-            order_status: "delivered",
+            order_status: "current",
             payment_status: "success",
-            paid_amount: ord.total_amount,
-            remaining_amount: 0,
             status_changed_at: new Date().toISOString(),
           })
-          .eq("id", ord.id);
+          .in("id", statusChangeIds);
 
-        if (updErr) throw updErr;
+        if (error) throw error;
+      } else if (newStatus === "delivered") {
+        const { data: ordersData, error: fetchErr } = await supabase
+          .from("orders")
+          .select("id, total_amount")
+          .in("id", statusChangeIds);
+
+        if (fetchErr || !ordersData) throw fetchErr;
+
+        for (const ord of ordersData) {
+          const { error: updErr } = await supabase
+            .from("orders")
+            .update({
+              order_status: "delivered",
+              payment_status: "success",
+              paid_amount: ord.total_amount,
+              remaining_amount: 0,
+              status_changed_at: new Date().toISOString(),
+            })
+            .eq("id", ord.id);
+
+          if (updErr) throw updErr;
+        }
+      } else if (newStatus === "spam") {
+        const { error } = await supabase
+          .from("orders")
+          .update({
+            order_status: "spam",
+            payment_status: "pending",
+            status_changed_at: new Date().toISOString(),
+          })
+          .in("id", statusChangeIds);
+
+        if (error) throw error;
+      } else if (newStatus === "pending") {
+        const { error } = await supabase
+          .from("orders")
+          .update({
+            order_status: "pending",
+            payment_status: "pending",
+            status_changed_at: new Date().toISOString(),
+          })
+          .in("id", statusChangeIds);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("orders")
+          .update({
+            order_status: newStatus,
+            status_changed_at: new Date().toISOString(),
+          })
+          .in("id", statusChangeIds);
+
+        if (error) throw error;
       }
-    } else if (newStatus === "spam") {
-      // → Spam: payment_status = pending
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: "spam",
-          payment_status: "pending",
-          status_changed_at: new Date().toISOString(),
-        })
-        .in("id", statusChangeIds);
 
-      if (error) throw error;
-    } else if (newStatus === "pending") {
-      // Spam → Pending (Restore)
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: "pending",
-          payment_status: "pending",
-          status_changed_at: new Date().toISOString(),
-        })
-        .in("id", statusChangeIds);
-
-      if (error) throw error;
-    } else {
-      // Current → OFD: কিছুই পরিবর্তন না
-      const { error } = await supabase
-        .from("orders")
-        .update({
-          order_status: newStatus,
-          status_changed_at: new Date().toISOString(),
-        })
-        .in("id", statusChangeIds);
-
-      if (error) throw error;
+      setStatusChangeIds(null);
+      await fetchOrders();
+      await fetchCounts();
+    } catch (err: any) {
+      console.error("Status change error:", err);
+      throw err;
     }
-
-    setStatusChangeIds(null);
-    await fetchOrders();
-    await fetchCounts();
-  } catch (err: any) {
-    console.error("Status change error:", err);
-    throw err;
-  }
-};
+  };
 
   const handleDelete = async (order: OrderData) => {
     if (
@@ -451,7 +446,6 @@ export default function OrdersPage() {
     await fetchCounts();
   };
 
-  // ✅ Bulk Print — Only Current Orders
   const handleBulkPrint = () => {
     const selectedOrders = orders.filter((o) =>
       selectedIds.includes(o.id)
@@ -589,7 +583,6 @@ export default function OrdersPage() {
             ))}
           </div>
 
-          {/* Load More */}
           {hasMore && !isSearchActive && (
             <div className="flex justify-center pt-2">
               <button
@@ -619,7 +612,11 @@ export default function OrdersPage() {
 
       {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
-
+        <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
+          <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
+            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+              {selectedIds.length} selected:
+            </span>
 
             <button
               onClick={handleBulkPrint}
@@ -680,16 +677,16 @@ export default function OrdersPage() {
         <StatusChangeModal
           orderIds={statusChangeIds}
           currentStatus={(() => {
-  const selectedOrders = orders.filter((o) =>
-    statusChangeIds.includes(o.id)
-  );
-  if (selectedOrders.length === 0) return undefined;
-  const firstStatus = selectedOrders[0].order_status;
-  const allSame = selectedOrders.every(
-    (o) => o.order_status === firstStatus
-  );
-  return allSame ? (firstStatus as OrderStatus) : undefined;
-})()}
+            const selectedOrders = orders.filter((o) =>
+              statusChangeIds.includes(o.id)
+            );
+            if (selectedOrders.length === 0) return undefined;
+            const firstStatus = selectedOrders[0].order_status;
+            const allSame = selectedOrders.every(
+              (o) => o.order_status === firstStatus
+            );
+            return allSame ? (firstStatus as OrderStatus) : undefined;
+          })()}
           onClose={() => setStatusChangeIds(null)}
           onConfirm={handleStatusChange}
         />
@@ -728,4 +725,4 @@ export default function OrdersPage() {
       )}
     </div>
   );
-    }
+            }
