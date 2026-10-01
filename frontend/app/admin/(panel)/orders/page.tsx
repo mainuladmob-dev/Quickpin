@@ -97,13 +97,13 @@ export default function OrdersPage() {
     return null;
   }, [dateRange, customStart, customEnd]);
 
-  // ===== Fetch Status Counts =====
+  // ===== Fetch Status Counts (শুধু order_status ভিত্তিতে) =====
   const fetchCounts = useCallback(async () => {
     const range = getDateRange();
 
     let query = supabase
       .from("orders")
-      .select("id, order_status, payment_status, refund_amount");
+      .select("id, order_status, refund_amount");
 
     if (range) {
       query = query
@@ -117,123 +117,101 @@ export default function OrdersPage() {
       console.error("Counts fetch error:", error);
       return;
     }
-// ===== Fetch Status Counts =====
-const fetchCounts = useCallback(async () => {
-  const range = getDateRange();
 
-  let query = supabase
-    .from("orders")
-    .select("id, order_status, payment_status, refund_amount");
+    const pending = data.filter(
+      (o: any) => o.order_status === "pending"
+    ).length;
 
-  if (range) {
-    query = query
-      .gte("created_at", range.start)
-      .lte("created_at", range.end);
-  }
+    const current = data.filter(
+      (o: any) => o.order_status === "current"
+    ).length;
 
-  const { data, error } = await query;
+    const ofd = data.filter(
+      (o: any) => o.order_status === "out_for_delivery"
+    ).length;
 
-  if (error || !data) {
-    console.error("Counts fetch error:", error);
-    return;
-  }
+    const delivered = data.filter(
+      (o: any) => o.order_status === "delivered"
+    ).length;
 
-  // ✅ শুধু order_status দিয়ে count (payment_status বাদ)
-  const all = data.length;
+    const refund = data.filter(
+      (o: any) => (Number(o.refund_amount) || 0) > 0
+    ).length;
 
-  const pending = data.filter(
-    (o: any) => o.order_status === "pending"
-  ).length;
+    const spam = data.filter(
+      (o: any) => o.order_status === "spam"
+    ).length;
 
-  const current = data.filter(
-    (o: any) => o.order_status === "current"
-  ).length;
-
-  const ofd = data.filter(
-    (o: any) => o.order_status === "out_for_delivery"
-  ).length;
-
-  const delivered = data.filter(
-    (o: any) => o.order_status === "delivered"
-  ).length;
-
-  const refund = data.filter(
-    (o: any) => (Number(o.refund_amount) || 0) > 0
-  ).length;
-
-  const spam = data.filter(
-    (o: any) => o.order_status === "spam"
-  ).length;
-
-  setCounts({
-    all,
-    current,
-    out_for_delivery: ofd,
-    delivered,
-    refund,
-    pending,
-    spam,
-  });
-}, [supabase, getDateRange]);
+    setCounts({
+      all: 0,
+      current,
+      out_for_delivery: ofd,
+      delivered,
+      refund,
+      pending,
+      spam,
+    });
+  }, [supabase, getDateRange]);
 
   const buildQuery = useCallback(() => {
-  let query = supabase.from("orders").select(
-    `
-      id,
-      order_number,
-      user_id,
-      customer_upi,
-      payment_status,
-      order_status,
-      payment_type,
-      delivery_type,
-      delivery_charge,
-      total_amount,
-      paid_amount,
-      remaining_amount,
-      refund_amount,
-      payment_screenshot_url,
-      created_at,
-      delivery_address_snapshot,
-      order_items (
+    let query = supabase.from("orders").select(
+      `
         id,
-        qty,
-        price,
-        products ( name_en, weight, gst_percentage )
-      )
-    `
-  );
-
-  if (searchQuery.trim()) {
-    query = query.eq("order_number", searchQuery.trim());
-  } else {
-    const range = getDateRange();
-    if (range) {
-      query = query
-        .gte("created_at", range.start)
-        .lte("created_at", range.end);
-    }
-  }
-
-  if (orderStatus === "refund") {
-    query = query.gt("refund_amount", 0);
-  } else if (orderStatus !== "all") {
-    query = query.eq("order_status", orderStatus);
-  }
-
-  if (orderType !== "all") {
-    const [paymentPart, deliveryPart] = orderType.split("_");
-    query = query.eq("payment_type", paymentPart);
-    query = query.eq(
-      "delivery_type",
-      deliveryPart === "home" ? "home_delivery" : "self_pickup"
+        order_number,
+        user_id,
+        customer_upi,
+        payment_status,
+        order_status,
+        payment_type,
+        delivery_type,
+        delivery_charge,
+        total_amount,
+        paid_amount,
+        remaining_amount,
+        refund_amount,
+        payment_screenshot_url,
+        created_at,
+        delivery_address_snapshot,
+        order_items (
+          id,
+          qty,
+          price,
+          products ( name_en, weight, gst_percentage )
+        )
+      `
     );
-  }
 
-  return query;
-}, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
+    if (searchQuery.trim()) {
+      query = query.eq("order_number", searchQuery.trim());
+    } else {
+      const range = getDateRange();
+      if (range) {
+        query = query
+          .gte("created_at", range.start)
+          .lte("created_at", range.end);
+      }
+    }
+
+    if (orderStatus === "refund") {
+      query = query.gt("refund_amount", 0);
+    } else if (orderStatus !== "all") {
+      query = query.eq("order_status", orderStatus);
+    }
+    // ✅ "all" হলে কোনো filter নেই — সব order দেখাবে
+
+    if (orderType !== "all") {
+      const [paymentPart, deliveryPart] = orderType.split("_");
+      query = query.eq("payment_type", paymentPart);
+      query = query.eq(
+        "delivery_type",
+        deliveryPart === "home" ? "home_delivery" : "self_pickup"
+      );
+    }
+
+    return query;
+  }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
     const transformOrder = (o: any): OrderData => {
-  const addr = o.delivery_address_snapshot || null;
+    const addr = o.delivery_address_snapshot || null;
     const phoneFromAddr = addr?.phone || null;
 
     return {
@@ -276,6 +254,7 @@ const fetchCounts = useCallback(async () => {
           }
         : null,
     };
+  };
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -424,7 +403,6 @@ const fetchCounts = useCallback(async () => {
       return;
     }
 
-    // Check: সব current?
     const nonCurrentOrders = selectedOrders.filter(
       (o) => o.order_status !== "current"
     );
@@ -493,29 +471,27 @@ const fetchCounts = useCallback(async () => {
         />
       )}
 
-{/* Select All Bar */}
-{!loading && orders.length > 0 && !isSearchActive && (
-  <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
-    <label className="flex items-center gap-2 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={
-          selectedIds.length === orders.length && orders.length > 0
-        }
-        onChange={toggleSelectAll}
-        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-      />
-      <span className="text-xs font-medium text-gray-600">
-        Select All ({orders.length})
-      </span>
-    </label>
-    {selectedIds.length > 0 && (
-      <span className="text-xs font-semibold text-blue-600">
-        {selectedIds.length} selected
-      </span>
-    )}
-  </div>
-)}
+      {/* Select All Bar */}
+      {!loading && orders.length > 0 && !isSearchActive && (
+        <div className="flex items-center justify-between bg-white rounded-xl px-4 py-2.5 border border-gray-100">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedIds.length === orders.length && orders.length > 0}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-xs font-medium text-gray-600">
+              Select All ({orders.length})
+            </span>
+          </label>
+          {selectedIds.length > 0 && (
+            <span className="text-xs font-semibold text-blue-600">
+              {selectedIds.length} selected
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Orders List */}
       {loading ? (
@@ -615,6 +591,7 @@ const fetchCounts = useCallback(async () => {
             >
               ❌ Clear
             </button>
+          </div>
         </div>
       )}
 
@@ -670,7 +647,7 @@ const fetchCounts = useCallback(async () => {
           >
             <div className="flex items-center justify-between p-4 border-b border-gray-100">
               <h3 className="text-sm font-bold text-gray-900">
-               📸 Payment Screenshot
+                📸 Payment Screenshot
               </h3>
               <button
                 onClick={() => setScreenshotUrl(null)}
@@ -688,7 +665,7 @@ const fetchCounts = useCallback(async () => {
             </div>
           </div>
         </div>
-      )} 
+      )}
     </div>
   );
-}
+    }
