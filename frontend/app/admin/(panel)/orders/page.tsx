@@ -620,11 +620,17 @@ export default function OrdersPage() {
 
       {/* Bulk Actions Bar */}
       {selectedIds.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
-          <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
-              {selectedIds.length} selected:
-            </span>
+        currentStatus={(() => {
+  const selectedOrders = orders.filter((o) =>
+    statusChangeIds.includes(o.id)
+  );
+  if (selectedOrders.length === 0) return undefined;
+  const firstStatus = selectedOrders[0].order_status;
+  const allSame = selectedOrders.every(
+    (o) => o.order_status === firstStatus
+  );
+  return allSame ? (firstStatus as OrderStatus) : undefined;
+})()}
 
             <button
               onClick={handleBulkPrint}
