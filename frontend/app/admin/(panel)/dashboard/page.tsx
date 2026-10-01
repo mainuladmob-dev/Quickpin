@@ -11,9 +11,21 @@ type DateRange = "today" | "yesterday" | "custom" | "all";
 interface OrderIdItem {
   id: string;
   amount: number;
+  gst?: number;
   refund?: number;
+  refundGST?: number;
   netAmount?: number;
 }
+
+// ✅ Calculate total GST from order items
+const calculateOrderGST = (items: any[]): number => {
+  return items.reduce((sum, item) => {
+    const gstPct = Number(item.products?.gst_percentage) || 0;
+    const itemTotal = (item.qty || 0) * (Number(item.price) || 0);
+    const itemGST = itemTotal - itemTotal / (1 + gstPct / 100);
+    return sum + itemGST;
+  }, 0);
+};
 
 export default function DashboardPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -24,8 +36,11 @@ export default function DashboardPage() {
 
   const [stats, setStats] = useState({
     grossSales: 0,
+    grossGST: 0,
     refundAmount: 0,
+    refundGST: 0,
     netSales: 0,
+    netGST: 0,
     deliveryCharge: 0,
     deliveryGST: 0,
     deliveryTotal: 0,
@@ -97,7 +112,12 @@ export default function DashboardPage() {
         total_amount,
         refund_amount,
         delivery_charge,
-        delivery_type
+        delivery_type,
+        order_items (
+          qty,
+          price,
+          products ( gst_percentage )
+        )
       `
       );
 
@@ -115,35 +135,55 @@ export default function DashboardPage() {
       return;
     }
 
-    // ===== Delivered orders (payment success + order delivered) =====
+    // ===== Refunds fetch (gst_amount সহ) =====
+    const orderIds = orders.map((o: any) => o.id);
+    const { data: refundsData } = await supabase
+      .from("refunds")
+      .select("order_id, amount, gst_amount")
+      .in("order_id", orderIds);
+
+    const refundsMap = new Map<string, { amount: number; gst: number }>();
+    (refundsData || []).forEach((r: any) => {
+      const existing = refundsMap.get(r.order_id) || { amount: 0, gst: 0 };
+      existing.amount += Number(r.amount) || 0;
+      existing.gst += Number(r.gst_amount) || 0;
+      refundsMap.set(r.order_id, existing);
+    });
+
+    // ===== Filters =====
     const delivered = orders.filter(
       (o: any) =>
         o.payment_status === "success" && o.order_status === "delivered"
     );
 
-    // ===== Refunded = refund_amount > 0 =====
     const refunded = orders.filter(
       (o: any) => (Number(o.refund_amount) || 0) > 0
     );
 
-    // ===== Home Delivered =====
     const homeDelivered = delivered.filter(
       (o: any) => o.delivery_type === "home_delivery"
     );
 
-    // ===== Gross Sales =====
+    // ===== Totals =====
     const grossSales = delivered.reduce(
       (sum: number, o: any) => sum + (Number(o.total_amount) || 0),
       0
     );
 
-    // ===== Refund Amount =====
+    const grossGST = delivered.reduce((sum: number, o: any) => {
+      return sum + calculateOrderGST(o.order_items || []);
+    }, 0);
+
     const refundAmount = refunded.reduce(
       (sum: number, o: any) => sum + (Number(o.refund_amount) || 0),
       0
     );
 
-    // ===== Delivery =====
+    const refundGST = refunded.reduce((sum: number, o: any) => {
+      const r = refundsMap.get(o.id);
+      return sum + (r?.gst || 0);
+    }, 0);
+
     const deliveryCharge = homeDelivered.reduce(
       (sum: number, o: any) => sum + (Number(o.delivery_charge) || 0),
       0
@@ -151,31 +191,38 @@ export default function DashboardPage() {
     const deliveryGST = deliveryCharge * 0.18;
     const deliveryTotal = deliveryCharge + deliveryGST;
 
-    // ===== Gross IDs =====
+    // ===== Order IDs =====
     const grossIdsArr: OrderIdItem[] = delivered.map((o: any) => ({
       id: o.order_number || `#${o.id.slice(0, 8)}`,
       amount: Number(o.total_amount) || 0,
+      gst: calculateOrderGST(o.order_items || []),
     }));
 
-    // ===== Refund IDs =====
-    const refundIdsArr: OrderIdItem[] = refunded.map((o: any) => ({
-      id: o.order_number || `#${o.id.slice(0, 8)}`,
-      amount: Number(o.refund_amount) || 0,
-    }));
+    const refundIdsArr: OrderIdItem[] = refunded.map((o: any) => {
+      const r = refundsMap.get(o.id);
+      return {
+        id: o.order_number || `#${o.id.slice(0, 8)}`,
+        amount: Number(o.refund_amount) || 0,
+        gst: r?.gst || 0,
+      };
+    });
 
-    // ✅ Net IDs — সব delivered order (refund থাকুক বা না থাকুক)
     const netIdsArr: OrderIdItem[] = delivered.map((o: any) => {
       const total = Number(o.total_amount) || 0;
       const refund = Number(o.refund_amount) || 0;
+      const gst = calculateOrderGST(o.order_items || []);
+      const r = refundsMap.get(o.id);
+      const refundGST = r?.gst || 0;
       return {
         id: o.order_number || `#${o.id.slice(0, 8)}`,
         amount: total,
+        gst: gst,
         refund: refund,
+        refundGST: refundGST,
         netAmount: total - refund,
       };
     });
 
-    // ===== Delivery IDs =====
     const deliveryIdsArr: OrderIdItem[] = homeDelivered.map((o: any) => ({
       id: o.order_number || `#${o.id.slice(0, 8)}`,
       amount: Number(o.delivery_charge) || 0,
@@ -183,8 +230,11 @@ export default function DashboardPage() {
 
     setStats({
       grossSales,
+      grossGST,
       refundAmount,
+      refundGST,
       netSales: grossSales - refundAmount,
+      netGST: grossGST - refundGST,
       deliveryCharge,
       deliveryGST,
       deliveryTotal,
@@ -242,45 +292,36 @@ export default function DashboardPage() {
           <StatsCard
             title="Gross Sales"
             value={`₹${stats.grossSales.toLocaleString("en-IN")}`}
-            subtitle="(incl. GST)"
+            subtitle={`(incl. GST ₹${stats.grossGST.toFixed(2)})`}
             bottomText={`📦 ${counts.grossOrders} orders`}
             icon="💰"
             color="green"
             onClick={() =>
-              setModalData({
-                title: "Gross Sales",
-                items: grossIds,
-              })
+              setModalData({ title: "Gross Sales", items: grossIds })
             }
             clickable
           />
           <StatsCard
             title="Refund"
             value={`₹${stats.refundAmount.toLocaleString("en-IN")}`}
-            subtitle="(incl. GST)"
+            subtitle={`(incl. GST ₹${stats.refundGST.toFixed(2)})`}
             bottomText={`📦 ${counts.refundOrders} refunds`}
             icon="↩️"
             color="red"
             onClick={() =>
-              setModalData({
-                title: "Refund",
-                items: refundIds,
-              })
+              setModalData({ title: "Refund", items: refundIds })
             }
             clickable
           />
           <StatsCard
             title="Net Sales"
             value={`₹${stats.netSales.toLocaleString("en-IN")}`}
-            subtitle="(incl. GST)"
+            subtitle={`(incl. GST ₹${stats.netGST.toFixed(2)})`}
             bottomText={`📦 ${counts.netOrders} orders`}
             icon="📈"
             color="blue"
             onClick={() =>
-              setModalData({
-                title: "Net Sales",
-                items: netIds,
-              })
+              setModalData({ title: "Net Sales", items: netIds })
             }
             clickable
           />
@@ -300,7 +341,7 @@ export default function DashboardPage() {
             subtitle="(incl. GST)"
             bottomText={`📦 ${counts.homeDeliveries} deliveries • Charge ₹${stats.deliveryCharge.toLocaleString(
               "en-IN"
-            )} + GST ₹${stats.deliveryGST.toLocaleString("en-IN")}`}
+            )} + GST ₹${stats.deliveryGST.toFixed(2)}`}
             icon="🚚"
             color="purple"
             onClick={() =>
@@ -326,4 +367,4 @@ export default function DashboardPage() {
       )}
     </div>
   );
-    }
+}
