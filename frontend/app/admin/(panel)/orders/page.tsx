@@ -117,30 +117,64 @@ export default function OrdersPage() {
       console.error("Counts fetch error:", error);
       return;
     }
+// ===== Fetch Status Counts =====
+const fetchCounts = useCallback(async () => {
+  const range = getDateRange();
 
-    const all = data.filter(
-      (o: any) => o.payment_status === "success"
-    ).length;
-    const current = data.filter(
-      (o: any) =>
-        o.payment_status === "success" && o.order_status === "current"
-    ).length;
-    const ofd = data.filter(
-      (o: any) =>
-        o.payment_status === "success" &&
-        o.order_status === "out_for_delivery"
-    ).length;
-    const delivered = data.filter(
-      (o: any) =>
-        o.payment_status === "success" && o.order_status === "delivered"
-    ).length;
-    const refund = data.filter(
-      (o: any) => (Number(o.refund_amount) || 0) > 0
-    ).length;
-    const pending = data.filter(
-      (o: any) => o.payment_status === "pending"
-    ).length;
-    const spam = data.filter((o: any) => o.order_status === "spam").length;
+  let query = supabase
+    .from("orders")
+    .select("id, order_status, payment_status, refund_amount");
+
+  if (range) {
+    query = query
+      .gte("created_at", range.start)
+      .lte("created_at", range.end);
+  }
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    console.error("Counts fetch error:", error);
+    return;
+  }
+
+  // ✅ শুধু order_status দিয়ে count (payment_status বাদ)
+  const all = data.length;
+
+  const pending = data.filter(
+    (o: any) => o.order_status === "pending"
+  ).length;
+
+  const current = data.filter(
+    (o: any) => o.order_status === "current"
+  ).length;
+
+  const ofd = data.filter(
+    (o: any) => o.order_status === "out_for_delivery"
+  ).length;
+
+  const delivered = data.filter(
+    (o: any) => o.order_status === "delivered"
+  ).length;
+
+  const refund = data.filter(
+    (o: any) => (Number(o.refund_amount) || 0) > 0
+  ).length;
+
+  const spam = data.filter(
+    (o: any) => o.order_status === "spam"
+  ).length;
+
+  setCounts({
+    all,
+    current,
+    out_for_delivery: ofd,
+    delivered,
+    refund,
+    pending,
+    spam,
+  });
+}, [supabase, getDateRange]);
 
     setCounts({
       all,
