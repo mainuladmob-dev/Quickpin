@@ -218,9 +218,10 @@ const fetchCounts = useCallback(async () => {
     if (orderStatus === "refund") {
       query = query.gt("refund_amount", 0);
     } else if (orderStatus !== "all") {
-      query = query.eq("order_status", orderStatus);
-                                   }
-    if (orderType !== "all") {
+        query = query.eq("order_status", orderStatus);
+}
+
+if (orderType !== "all") {
       const [paymentPart, deliveryPart] = orderType.split("_");
       query = query.eq("payment_type", paymentPart);
       query = query.eq(
