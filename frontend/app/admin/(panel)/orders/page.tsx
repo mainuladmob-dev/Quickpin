@@ -134,9 +134,7 @@ export default function OrdersPage() {
       (o: any) => o.order_status === "delivered"
     ).length;
 
-    const refund = data.filter(
-      (o: any) => (Number(o.refund_amount) || 0) > 0
-    ).length;
+    const all = data.length;
 
     const spam = data.filter(
       (o: any) => o.order_status === "spam"
