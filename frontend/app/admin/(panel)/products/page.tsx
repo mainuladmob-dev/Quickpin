@@ -18,9 +18,19 @@ interface Product {
   stock: number;
   is_active: boolean;
   category_id: string | null;
+  gst_percentage: number;
+  hsn_code: string | null;
   images: string[] | null;
   categories?: { name_en: string }[] | null;
 }
+
+const GST_RATES = [
+  { value: 0, label: "0% (Fresh/Exempt)" },
+  { value: 5, label: "5% (Packaged food)" },
+  { value: 12, label: "12% (Processed)" },
+  { value: 18, label: "18% (General)" },
+  { value: 28, label: "28% (Luxury)" },
+];
 
 export default function ProductsPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -45,9 +55,11 @@ export default function ProductsPage() {
     stock: "",
     is_active: true,
     category_id: "",
+    gst_percentage: "0",
+    hsn_code: "",
   });
 
-  // ✅ Image state (এটাই হারিয়ে গেছিল)
+  // ✅ Image state
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
 
@@ -59,7 +71,7 @@ export default function ProductsPage() {
     const { data, error } = await supabase
       .from("products")
       .select(
-        "id, name_en, name_bn, price, weight, stock, is_active, category_id, images, categories(name_en)"
+        "id, name_en, name_bn, price, weight, stock, is_active, category_id, gst_percentage, hsn_code, images, categories(name_en)"
       )
       .order("created_at", { ascending: false });
 
@@ -100,8 +112,10 @@ export default function ProductsPage() {
       stock: "",
       is_active: true,
       category_id: "",
+      gst_percentage: "0",
+      hsn_code: "",
     });
-    setImages([]); // ✅ reset images
+    setImages([]);
     setError("");
     setShowModal(true);
   };
@@ -116,34 +130,38 @@ export default function ProductsPage() {
       stock: String(product.stock || ""),
       is_active: product.is_active,
       category_id: product.category_id || "",
+      gst_percentage: String(product.gst_percentage || 0),
+      hsn_code: product.hsn_code || "",
     });
-    setImages(product.images || []); // ✅ existing images লোড
+    setImages(product.images || []);
     setError("");
     setShowModal(true);
   };
-// ✅ Upload function সরাসরি এখানে
-const uploadProductImage = async (file: File): Promise<string | null> => {
-  const ext = file.name.split(".").pop();
-  const fileName = `${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}.${ext}`;
-  const filePath = `products/${fileName}`;
 
-  const { error } = await supabase.storage
-    .from("product-images")
-    .upload(filePath, file, { cacheControl: "3600", upsert: false });
+  // ✅ Upload function সরাসরি এখানে
+  const uploadProductImage = async (file: File): Promise<string | null> => {
+    const ext = file.name.split(".").pop();
+    const fileName = `${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.${ext}`;
+    const filePath = `products/${fileName}`;
 
-  if (error) {
-    console.error("Upload error:", error);
-    return null;
-  }
+    const { error } = await supabase.storage
+      .from("product-images")
+      .upload(filePath, file, { cacheControl: "3600", upsert: false });
 
-  const { data } = supabase.storage
-    .from("product-images")
-    .getPublicUrl(filePath);
+    if (error) {
+      console.error("Upload error:", error);
+      return null;
+    }
 
-  return data.publicUrl;
-};
+    const { data } = supabase.storage
+      .from("product-images")
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  };
+
   // ✅ Image upload handler
   const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>
@@ -201,7 +219,9 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
       stock: Number(formData.stock) || 0,
       is_active: formData.is_active,
       category_id: formData.category_id,
-      images, // ✅ images save
+      gst_percentage: Number(formData.gst_percentage) || 0,
+      hsn_code: formData.hsn_code.trim() || null,
+      images,
     };
 
     try {
@@ -361,7 +381,6 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
               key={product.id}
               className="bg-white rounded-xl shadow-sm border border-gray-100 p-3 flex items-center gap-3"
             >
-              {/* Image */}
               <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center text-2xl shrink-0 overflow-hidden">
                 {product.images && product.images[0] ? (
                   <img
@@ -374,7 +393,6 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
                 )}
               </div>
 
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 truncate">
                   {product.name_en}
@@ -403,14 +421,23 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
                     Stock: {product.stock}
                   </span>
                 </div>
-                {product.categories?.[0]?.name_en && (
-                  <span className="inline-block mt-1.5 text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
-                    📂 {product.categories[0].name_en}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  {product.categories?.[0]?.name_en && (
+                    <span className="text-xs bg-purple-50 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                      📂 {product.categories[0].name_en}
+                    </span>
+                  )}
+                  <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                    GST: {product.gst_percentage || 0}%
                   </span>
-                )}
+                  {product.hsn_code && (
+                    <span className="text-xs bg-orange-50 text-orange-700 px-2 py-0.5 rounded-full font-medium font-mono">
+                      HSN: {product.hsn_code}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {/* Actions */}
               <div className="flex flex-col gap-1 shrink-0">
                 <button
                   onClick={() => openEditModal(product)}
@@ -463,7 +490,7 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
             </div>
 
             <div className="p-5 space-y-4">
-              {/* Category Dropdown */}
+              {/* Category */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   📂 Category *
@@ -494,7 +521,7 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
                 )}
               </div>
 
-              {/* ✅ Product Images (হারিয়ে যাওয়া অংশ) */}
+              {/* ✅ Product Images */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   🖼️ Product Images
@@ -572,6 +599,7 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
                     setFormData({ ...formData, name_bn: e.target.value })
                   }
                   placeholder="আলু"
+                  className="w-full p
                   className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -608,7 +636,50 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
                 </div>
               </div>
 
-                            <div>
+              {/* GST */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  📊 GST Percentage *
+                </label>
+                <select
+                  value={formData.gst_percentage}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      gst_percentage: e.target.value,
+                    })
+                  }
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                >
+                  {GST_RATES.map((rate) => (
+                    <option key={rate.value} value={rate.value}>
+                      {rate.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* HSN Code */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  🔢 HSN Code
+                </label>
+                <input
+                  type="text"
+                  value={formData.hsn_code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, hsn_code: e.target.value })
+                  }
+                  placeholder="e.g. 0701, 1905, 3401"
+                  maxLength={8}
+                  className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  GSTR-1 Filing-এর জন্য HSN Code (4 বা 6 digit)
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Stock
                 </label>
@@ -665,4 +736,4 @@ const uploadProductImage = async (file: File): Promise<string | null> => {
       )}
     </div>
   );
-}
+              }
