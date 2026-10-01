@@ -50,11 +50,6 @@ export default function OrderIdsModal({
     0
   );
 
-  const totalRefund = orderIds.reduce(
-    (sum, item) => sum + (item.refund || 0),
-    0
-  );
-
   const totalNet = orderIds.reduce(
     (sum, item) => sum + (item.netAmount ?? item.amount ?? 0),
     0
@@ -140,7 +135,10 @@ export default function OrderIdsModal({
                     )}
                     {isNetSales && (
                       <span className="text-sm font-bold text-blue-700">
-                        ₹{(item.netAmount ?? item.amount).toLocaleString("en-IN")}
+                        ₹
+                        {(item.netAmount ?? item.amount).toLocaleString(
+                          "en-IN"
+                        )}
                       </span>
                     )}
                     <button
@@ -156,14 +154,15 @@ export default function OrderIdsModal({
                   </div>
                 </div>
 
-                {/* Net Sales breakdown */}
+                {/* Net Sales Breakdown */}
                 {isNetSales && (item.refund || 0) > 0 && (
                   <div className="mt-1.5 pl-8 flex items-center gap-3 text-xs">
                     <span className="text-gray-500">
                       Gross: ₹{item.amount.toLocaleString("en-IN")}
                     </span>
                     <span className="text-red-500">
-                      Refund: −₹{(item.refund || 0).toLocaleString("en-IN")}
+                      Refund: −₹
+                      {(item.refund || 0).toLocaleString("en-IN")}
                     </span>
                     <span className="text-green-600 font-semibold">
                       Net: ₹
@@ -178,4 +177,4 @@ export default function OrderIdsModal({
       </div>
     </div>
   );
-        }
+}
