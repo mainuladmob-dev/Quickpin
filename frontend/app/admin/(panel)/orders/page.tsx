@@ -177,61 +177,61 @@ const fetchCounts = useCallback(async () => {
 }, [supabase, getDateRange]);
 
   const buildQuery = useCallback(() => {
-    let query = supabase.from("orders").select(
-      `
+  let query = supabase.from("orders").select(
+    `
+      id,
+      order_number,
+      user_id,
+      customer_upi,
+      payment_status,
+      order_status,
+      payment_type,
+      delivery_type,
+      delivery_charge,
+      total_amount,
+      paid_amount,
+      remaining_amount,
+      refund_amount,
+      payment_screenshot_url,
+      created_at,
+      delivery_address_snapshot,
+      order_items (
         id,
-        order_number,
-        user_id,
-        customer_upi,
-        payment_status,
-        order_status,
-        payment_type,
-        delivery_type,
-        delivery_charge,
-        total_amount,
-        paid_amount,
-        remaining_amount,
-        refund_amount,
-        payment_screenshot_url,
-        created_at,
-        delivery_address_snapshot,
-        order_items (
-          id,
-          qty,
-          price,
-          products ( name_en, weight, gst_percentage )
-        )
-      `
-    );
-
-    if (searchQuery.trim()) {
-      query = query.eq("order_number", searchQuery.trim());
-    } else {
-      const range = getDateRange();
-      if (range) {
-        query = query
-          .gte("created_at", range.start)
-          .lte("created_at", range.end);
-      }
-    }
-
-    if (orderStatus === "refund") {
-      query = query.gt("refund_amount", 0);
-    } else if (orderStatus !== "all") {
-        query = query.eq("order_status", orderStatus);
-}
-if (orderType !== "all") {
-  const [paymentPart, deliveryPart] = orderType.split("_");
-  query = query.eq("payment_type", paymentPart);
-  query = query.eq(
-    "delivery_type",
-    deliveryPart === "home" ? "home_delivery" : "self_pickup"
+        qty,
+        price,
+        products ( name_en, weight, gst_percentage )
+      )
+    `
   );
-    return query;
-  }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
 
-  const transformOrder = (o: any): OrderData => {
-    const addr = o.delivery_address_snapshot || null;
+  if (searchQuery.trim()) {
+    query = query.eq("order_number", searchQuery.trim());
+  } else {
+    const range = getDateRange();
+    if (range) {
+      query = query
+        .gte("created_at", range.start)
+        .lte("created_at", range.end);
+    }
+  }
+
+  if (orderStatus === "refund") {
+    query = query.gt("refund_amount", 0);
+  } else if (orderStatus !== "all") {
+    query = query.eq("order_status", orderStatus);
+  }
+
+  if (orderType !== "all") {
+    const [paymentPart, deliveryPart] = orderType.split("_");
+    query = query.eq("payment_type", paymentPart);
+    query = query.eq(
+      "delivery_type",
+      deliveryPart === "home" ? "home_delivery" : "self_pickup"
+    );
+  }
+
+  return query;
+}, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
     const phoneFromAddr = addr?.phone || null;
 
     return {
