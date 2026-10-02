@@ -2,6 +2,8 @@ name: Supabase Full Backup
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 18 * * *'
 
 jobs:
   backup:
@@ -14,14 +16,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
 
-      - name: Dump database
-        run: |
-          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" -f quickpin-backup.sql
-          ls -lh quickpin-backup.sql
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - name: Upload backup
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Dump Database
+        run: |
+          /usr/lib/postgresql/17/bin/pg_dump "${{ secrets.SUPABASE_DB_URL }}" \
+            --schema=public \
+            --no-owner \
+            --no-acl \
+            -f quickpin-database-backup.sql
+          ls -lh quickpin-database-backup.sql
+
+      - name: Download Edge Functions
+        run: |
+          supabase functions download --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Upload Database Backup
         uses: actions/upload-artifact@v4
         with:
           name: quickpin-database-backup
-          path: quickpin-backup.sql
+          path: quickpin-database-backup.sql
+          retention-days: 90
+
+      - name: Upload Functions Backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickpin-functions-backup
+          path: supabase/functions/
           retention-days: 90
