@@ -99,9 +99,7 @@ export default function OrdersPage() {
   const fetchCounts = useCallback(async () => {
     const range = getDateRange();
 
-    let query = supabase
-      .from("orders")
-      .select("id, order_status");
+    let query = supabase.from("orders").select("id, order_status");
 
     if (range) {
       query = query
@@ -134,9 +132,7 @@ export default function OrdersPage() {
       (o: any) => o.order_status === "delivered"
     ).length;
 
-    const spam = data.filter(
-      (o: any) => o.order_status === "spam"
-    ).length;
+    const spam = data.filter((o: any) => o.order_status === "spam").length;
 
     setCounts({
       all,
@@ -202,7 +198,8 @@ export default function OrdersPage() {
 
     return query;
   }, [supabase, searchQuery, getDateRange, orderStatus, orderType]);
-    const transformOrder = (o: any): OrderData => {
+
+  const transformOrder = (o: any): OrderData => {
     const addr = o.delivery_address_snapshot || null;
     const phoneFromAddr = addr?.phone || null;
 
@@ -313,6 +310,7 @@ export default function OrdersPage() {
     }
   };
 
+  // ===== Status Change (Delivered → Screenshot Delete) =====
   const handleStatusChange = async (newStatus: OrderStatus) => {
     if (!statusChangeIds || statusChangeIds.length === 0) return;
 
@@ -329,13 +327,30 @@ export default function OrdersPage() {
 
         if (error) throw error;
       } else if (newStatus === "delivered") {
+        // ✅ 1. Order data নিয়ে আসি (screenshot URL সহ)
         const { data: ordersData, error: fetchErr } = await supabase
           .from("orders")
-          .select("id, total_amount")
+          .select("id, total_amount, payment_screenshot_url")
           .in("id", statusChangeIds);
 
         if (fetchErr || !ordersData) throw fetchErr;
 
+        // ✅ 2. Storage থেকে screenshots delete
+        const fileNames: string[] = [];
+        ordersData.forEach((ord) => {
+          if (ord.payment_screenshot_url) {
+            const fileName = ord.payment_screenshot_url.split("/").pop();
+            if (fileName) fileNames.push(fileName);
+          }
+        });
+
+        if (fileNames.length > 0) {
+          await supabase.storage
+            .from("payment-screenshots")
+            .remove(fileNames);
+        }
+
+        // ✅ 3. Order update
         for (const ord of ordersData) {
           const { error: updErr } = await supabase
             .from("orders")
@@ -344,6 +359,7 @@ export default function OrdersPage() {
               payment_status: "success",
               paid_amount: ord.total_amount,
               remaining_amount: 0,
+              payment_screenshot_url: null,
               status_changed_at: new Date().toISOString(),
             })
             .eq("id", ord.id);
@@ -351,6 +367,7 @@ export default function OrdersPage() {
           if (updErr) throw updErr;
         }
       } else if (newStatus === "spam") {
+        // Spam — screenshot থাকবে
         const { error } = await supabase
           .from("orders")
           .update({
@@ -393,6 +410,7 @@ export default function OrdersPage() {
     }
   };
 
+  // ===== Single Delete (Screenshot Delete) =====
   const handleDelete = async (order: OrderData) => {
     if (
       !confirm(
@@ -402,6 +420,17 @@ export default function OrdersPage() {
       return;
     }
 
+    // ✅ 1. Storage থেকে screenshot delete
+    if (order.payment_screenshot_url) {
+      const fileName = order.payment_screenshot_url.split("/").pop();
+      if (fileName) {
+        await supabase.storage
+          .from("payment-screenshots")
+          .remove([fileName]);
+      }
+    }
+
+    // ✅ 2. Order delete
     const { error } = await supabase
       .from("orders")
       .delete()
@@ -416,6 +445,7 @@ export default function OrdersPage() {
     await fetchCounts();
   };
 
+  // ===== Bulk Delete (Screenshot Delete) =====
   const handleBulkDelete = async () => {
     const spamOrders = orders.filter(
       (o) => selectedIds.includes(o.id) && o.order_status === "spam"
@@ -434,6 +464,22 @@ export default function OrdersPage() {
       return;
     }
 
+    // ✅ 1. Storage থেকে সব screenshot delete
+    const fileNames: string[] = [];
+    spamOrders.forEach((ord) => {
+      if (ord.payment_screenshot_url) {
+        const fileName = ord.payment_screenshot_url.split("/").pop();
+        if (fileName) fileNames.push(fileName);
+      }
+    });
+
+    if (fileNames.length > 0) {
+      await supabase.storage
+        .from("payment-screenshots")
+        .remove(fileNames);
+    }
+
+    // ✅ 2. Orders delete
     const ids = spamOrders.map((o) => o.id);
     const { error } = await supabase.from("orders").delete().in("id", ids);
 
@@ -614,8 +660,8 @@ export default function OrdersPage() {
       {selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
           <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
-              {selectedIds.length} selected:
+            <span className="text-xs font-semibold text-gray-600 whites
+                          {selectedIds.length} selected:
             </span>
 
             <button
@@ -725,4 +771,4 @@ export default function OrdersPage() {
       )}
     </div>
   );
-            }
+}
