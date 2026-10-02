@@ -658,8 +658,9 @@ export default function OrdersPage() {
       {selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
           <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
-            <span className="text-              {selectedIds.length} selected:
-            </span>
+            <span className="text-xs font-semibold text-gray-600 whitespace-nowrap">
+  {selectedIds.length} selected:
+</span>
 
             <button
               onClick={handleBulkPrint}
