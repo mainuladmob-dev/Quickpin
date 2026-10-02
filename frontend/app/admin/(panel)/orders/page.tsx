@@ -310,7 +310,7 @@ export default function OrdersPage() {
     }
   };
 
-  // ===== Status Change (Delivered → Screenshot Delete) =====
+  // ===== Status Change — Delivered হলে screenshot delete =====
   const handleStatusChange = async (newStatus: OrderStatus) => {
     if (!statusChangeIds || statusChangeIds.length === 0) return;
 
@@ -327,7 +327,7 @@ export default function OrdersPage() {
 
         if (error) throw error;
       } else if (newStatus === "delivered") {
-        // ✅ 1. Order data নিয়ে আসি (screenshot URL সহ)
+        // ✅ 1. Order data (screenshot URL সহ)
         const { data: ordersData, error: fetchErr } = await supabase
           .from("orders")
           .select("id, total_amount, payment_screenshot_url")
@@ -350,7 +350,7 @@ export default function OrdersPage() {
             .remove(fileNames);
         }
 
-        // ✅ 3. Order update
+        // ✅ 3. Order update (URL null সহ)
         for (const ord of ordersData) {
           const { error: updErr } = await supabase
             .from("orders")
@@ -410,7 +410,7 @@ export default function OrdersPage() {
     }
   };
 
-  // ===== Single Delete (Screenshot Delete) =====
+  // ===== Single Delete — Storage + DB screenshot delete =====
   const handleDelete = async (order: OrderData) => {
     if (
       !confirm(
@@ -430,7 +430,7 @@ export default function OrdersPage() {
       }
     }
 
-    // ✅ 2. Order delete
+    // ✅ 2. Order delete from DB
     const { error } = await supabase
       .from("orders")
       .delete()
@@ -445,7 +445,7 @@ export default function OrdersPage() {
     await fetchCounts();
   };
 
-  // ===== Bulk Delete (Screenshot Delete) =====
+  // ===== Bulk Delete — Storage + DB screenshot delete =====
   const handleBulkDelete = async () => {
     const spamOrders = orders.filter(
       (o) => selectedIds.includes(o.id) && o.order_status === "spam"
@@ -479,7 +479,7 @@ export default function OrdersPage() {
         .remove(fileNames);
     }
 
-    // ✅ 2. Orders delete
+    // ✅ 2. Orders delete from DB
     const ids = spamOrders.map((o) => o.id);
     const { error } = await supabase.from("orders").delete().in("id", ids);
 
@@ -493,9 +493,7 @@ export default function OrdersPage() {
   };
 
   const handleBulkPrint = () => {
-    const selectedOrders = orders.filter((o) =>
-      selectedIds.includes(o.id)
-    );
+    const selectedOrders = orders.filter((o) => selectedIds.includes(o.id));
 
     if (selectedOrders.length === 0) {
       alert("কোনো order select করা হয়নি");
@@ -660,8 +658,7 @@ export default function OrdersPage() {
       {selectedIds.length > 0 && (
         <div className="fixed bottom-0 left-0 right-0 md:left-64 z-40 bg-white border-t border-gray-200 shadow-2xl">
           <div className="px-4 py-3 flex items-center gap-2 overflow-x-auto">
-            <span className="text-xs font-semibold text-gray-600 whites
-                          {selectedIds.length} selected:
+            <span className="text-              {selectedIds.length} selected:
             </span>
 
             <button
